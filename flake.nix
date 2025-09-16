@@ -29,7 +29,6 @@
               valgrind
               clang-tools
               cppcheck
-              gtest
             ];
           };
     };
