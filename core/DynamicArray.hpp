@@ -34,17 +34,17 @@ public:
 
 private:
   Allocator m_alloc;
-  pointer m_begin, m_end, m_capacity;
+  pointer m_first, m_last, m_capacity;
 
 public:
   DynamicArray()
-      : m_alloc(Allocator()), m_begin(nullptr), m_end(nullptr),
+      : m_alloc(Allocator()), m_first(nullptr), m_last(nullptr),
         m_capacity(nullptr) {};
 
   ~DynamicArray() {
-    if (m_begin != nullptr) [[likely]] {
-      m_destroy_range(m_begin, m_end);
-      m_deallocate(m_begin, m_capacity);
+    if (m_first != nullptr) [[likely]] {
+      m_destroy_range(m_first, m_last);
+      m_deallocate(m_first, m_capacity);
     }
   }
 
@@ -56,23 +56,28 @@ public:
 
   DynamicArray(const DynamicArray &other)
       : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)) {
-    reserve_exact(size_type(other.m_end - other.m_begin));
-    m_copy_range(other.m_begin, other.m_end, m_begin);
+    reserve_exact(size_type(other.m_last - other.m_first));
+    m_copy_range(other.m_first, other.m_last, m_first);
   }
 
   DynamicArray(DynamicArray &&other) noexcept
-      : m_alloc(std::move(other.m_alloc)), m_begin(other.m_begin),
-        m_end(other.m_end), m_capacity(other.m_capacity) {
-    other.m_begin = nullptr;
-    other.m_end = nullptr;
+      : m_alloc(std::move(other.m_alloc)), m_first(other.m_first),
+        m_last(other.m_last), m_capacity(other.m_capacity) {
+    other.m_first = nullptr;
+    other.m_last = nullptr;
     other.m_capacity = nullptr;
   };
 
+  template <class It, class Category =
+                          typename std::iterator_traits<It>::iterator_category>
+  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
+      : DynamicArray(first, last, alloc, Category()) {}
+
 public:
-  iterator begin() noexcept { return m_begin; }
-  const_iterator begin() const noexcept { return m_begin; }
-  iterator end() noexcept { return m_end; }
-  const_iterator end() const noexcept { return m_end; }
+  iterator begin() noexcept { return m_first; }
+  const_iterator begin() const noexcept { return m_first; }
+  iterator end() noexcept { return m_last; }
+  const_iterator end() const noexcept { return m_last; }
 
   reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
   const_reverse_iterator rbegin() const noexcept {
@@ -83,8 +88,8 @@ public:
     return const_reverse_iterator(begin());
   }
 
-  const_iterator cbegin() const noexcept { return m_begin; }
-  const_iterator cend() const noexcept { return m_end; }
+  const_iterator cbegin() const noexcept { return m_first; }
+  const_iterator cend() const noexcept { return m_last; }
   const_reverse_iterator crbegin() const noexcept {
     return const_reverse_iterator(end());
   }
@@ -92,15 +97,15 @@ public:
     return const_reverse_iterator(begin());
   }
 
-  reference operator[](size_type idx) { return m_begin[idx]; }
-  const_reference operator[](size_type idx) const { return m_begin[idx]; }
+  reference operator[](size_type idx) { return m_first[idx]; }
+  const_reference operator[](size_type idx) const { return m_first[idx]; }
 
   const_reference at(size_type idx) const {
     if (idx >= size()) [[unlikely]] {
       throw std::out_of_range("DynamicArray => Index out of range.");
     }
 
-    return m_begin[idx];
+    return m_first[idx];
   }
 
   reference at(size_type idx) {
@@ -113,7 +118,7 @@ public:
       throw std::out_of_range("DynamicArray => Array is empty.");
     }
 
-    return *m_begin;
+    return *m_first;
   }
 
   reference front() {
@@ -126,7 +131,7 @@ public:
       throw std::out_of_range("DynamicArray => Array is empty.");
     }
 
-    return m_end[-1];
+    return m_last[-1];
   }
 
   reference back() {
@@ -134,91 +139,91 @@ public:
     return const_cast<reference>(const_this.back());
   }
 
-  pointer data() noexcept { return m_begin; }
-  const_pointer data() const noexcept { return m_begin; }
+  pointer data() noexcept { return m_first; }
+  const_pointer data() const noexcept { return m_first; }
 
-  size_type size() const noexcept { return size_type(m_end - m_begin); }
+  size_type size() const noexcept { return size_type(m_last - m_first); }
   size_type max_size() const noexcept {
     return std::numeric_limits<size_type>::max();
   }
 
   size_type capacity() const noexcept {
-    return size_type(m_capacity - m_begin);
+    return size_type(m_capacity - m_first);
   }
 
-  bool is_empty() const noexcept { return m_begin == m_end; }
+  bool is_empty() const noexcept { return m_first == m_last; }
 
-  size_type reserve_aligned(size_type min_capacity) {
+  size_type reserve_aligned(size_type n) {
     // TODO
-    reserve_exact(min_capacity);
-    return min_capacity;
+    reserve_exact(n);
+    return n;
   }
 
-  void reserve_exact(size_type target_capacity) {
-    if (target_capacity <= size()) {
+  void reserve_exact(size_type n) {
+    if (n <= size()) {
       return;
     }
 
-    pointer new_begin = m_allocate(target_capacity);
+    pointer new_begin = m_allocate(n);
     pointer new_end = new_begin + size();
-    pointer new_capacity = new_begin + target_capacity;
+    pointer new_capacity = new_begin + n;
 
-    if (m_begin != nullptr) [[likely]] {
-      m_move_range(m_begin, m_end, new_begin);
-      m_deallocate(m_begin, m_capacity);
+    if (m_first != nullptr) [[likely]] {
+      m_move_range(m_first, m_last, new_begin);
+      m_deallocate(m_first, m_capacity);
     }
 
-    m_begin = new_begin;
-    m_end = new_end;
+    m_first = new_begin;
+    m_last = new_end;
     m_capacity = new_capacity;
   }
 
   template <class... Args> reference emplace_back(Args &&...args) {
-    if (m_end == m_capacity) {
+    if (m_last == m_capacity) {
       reserve_exact(m_calc_growth());
     }
 
-    m_construct_item(m_end, std::forward<Args>(args)...);
-    ++m_end;
+    m_construct_item(m_last, std::forward<Args>(args)...);
+    ++m_last;
     return back();
   }
 
   void push_back(const T &item) {
-    if (m_end == m_capacity) {
+    if (m_last == m_capacity) {
       reserve_exact(m_calc_growth());
     }
 
-    m_construct_item(m_end, item);
-    ++m_end;
+    m_construct_item(m_last, item);
+    ++m_last;
   }
 
   void push_back(T &&item) {
-    if (m_end == m_capacity) {
+    if (m_last == m_capacity) {
       reserve_exact(m_calc_growth());
     }
 
-    m_construct_item(m_end, std::move(item));
-    ++m_end;
+    m_construct_item(m_last, std::move(item));
+    ++m_last;
   }
 
 private:
-  pointer m_allocate(size_type size) { return AT::allocate(m_alloc, size); }
+  pointer m_allocate(size_type n) { return AT::allocate(m_alloc, n); }
 
-  void m_deallocate(pointer begin, pointer end) {
-    AT::deallocate(m_alloc, begin, size_type(end - begin));
+  void m_deallocate(pointer first, pointer last) {
+    AT::deallocate(m_alloc, first, size_type(last - first));
   }
 
-  void m_destroy_range(pointer begin, pointer end) noexcept {
+  void m_destroy_range(pointer first, pointer last) noexcept {
     if constexpr (!std::is_trivially_destructible_v<T>) {
-      for (; end - begin >= 4; begin += 4) {
-        AT::destroy(m_alloc, begin);
-        AT::destroy(m_alloc, begin + 1);
-        AT::destroy(m_alloc, begin + 2);
-        AT::destroy(m_alloc, begin + 3);
+      for (; last - first >= 4; first += 4) {
+        AT::destroy(m_alloc, first);
+        AT::destroy(m_alloc, first + 1);
+        AT::destroy(m_alloc, first + 2);
+        AT::destroy(m_alloc, first + 3);
       }
 
-      for (; begin != end; ++begin) {
-        AT::destroy(m_alloc, begin);
+      for (; first != last; ++first) {
+        AT::destroy(m_alloc, first);
       }
     }
   }
@@ -233,25 +238,25 @@ private:
     AT::construct(m_alloc, ptr, std::forward<Args>(args)...);
   }
 
-  void m_move_range(pointer src_begin, pointer src_end, pointer dest) {
+  void m_move_range(pointer src_first, pointer src_last, pointer dest) {
     if constexpr (std::is_trivially_copyable_v<T>) {
-      std::memcpy(dest, src_begin, size_type(src_end - src_begin) * sizeof(T));
+      std::memcpy(dest, src_first, size_type(src_last - src_first) * sizeof(T));
     } else {
-      std::uninitialized_move(src_begin, src_end, dest);
+      std::uninitialized_move(src_first, src_last, dest);
     }
   };
 
-  void m_copy_range(pointer src_begin, pointer src_end, pointer dest) {
+  void m_copy_range(pointer src_first, pointer src_last, pointer dest) {
     if constexpr (std::is_trivially_copyable_v<T>) {
-      std::memcpy(dest, src_begin, size_type(src_end - src_begin) * sizeof(T));
+      std::memcpy(dest, src_first, size_type(src_last - src_first) * sizeof(T));
     } else {
-      std::uninitialized_copy(src_begin, src_end, dest);
+      std::uninitialized_copy(src_first, src_last, dest);
     }
   }
 
   static void s_swap(DynamicArray &a, DynamicArray &b) noexcept {
-    std::swap(a.m_begin, b.m_begin);
-    std::swap(a.m_end, b.m_end);
+    std::swap(a.m_first, b.m_first);
+    std::swap(a.m_last, b.m_last);
     std::swap(a.m_capacity, b.m_capacity);
   }
 
