@@ -43,8 +43,8 @@ public:
 
   ~DynamicArray() {
     if (m_begin != nullptr) [[likely]] {
-      d_destroy_range(m_begin, m_end);
-      d_deallocate(m_begin, m_capacity);
+      m_destroy_range(m_begin, m_end);
+      m_deallocate(m_begin, m_capacity);
     }
   }
 
@@ -57,7 +57,7 @@ public:
   DynamicArray(const DynamicArray &other)
       : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)) {
     reserve_exact(size_type(other.m_end - other.m_begin));
-    d_copy_range(other.m_begin, other.m_end, m_begin);
+    m_copy_range(other.m_begin, other.m_end, m_begin);
   }
 
   DynamicArray(DynamicArray &&other) noexcept
@@ -159,13 +159,13 @@ public:
       return;
     }
 
-    pointer new_begin = d_allocate(target_capacity);
+    pointer new_begin = m_allocate(target_capacity);
     pointer new_end = new_begin + size();
     pointer new_capacity = new_begin + target_capacity;
 
     if (m_begin != nullptr) [[likely]] {
-      d_move_range(m_begin, m_end, new_begin);
-      d_deallocate(m_begin, m_capacity);
+      m_move_range(m_begin, m_end, new_begin);
+      m_deallocate(m_begin, m_capacity);
     }
 
     m_begin = new_begin;
@@ -178,7 +178,7 @@ public:
       reserve_exact(m_calc_growth());
     }
 
-    d_construct_item(m_end, std::forward<Args>(args)...);
+    m_construct_item(m_end, std::forward<Args>(args)...);
     ++m_end;
     return back();
   }
@@ -188,7 +188,7 @@ public:
       reserve_exact(m_calc_growth());
     }
 
-    d_construct_item(m_end, item);
+    m_construct_item(m_end, item);
     ++m_end;
   }
 
@@ -197,18 +197,18 @@ public:
       reserve_exact(m_calc_growth());
     }
 
-    d_construct_item(m_end, std::move(item));
+    m_construct_item(m_end, std::move(item));
     ++m_end;
   }
 
 private:
-  pointer d_allocate(size_type size) { return AT::allocate(m_alloc, size); }
+  pointer m_allocate(size_type size) { return AT::allocate(m_alloc, size); }
 
-  void d_deallocate(pointer begin, pointer end) {
+  void m_deallocate(pointer begin, pointer end) {
     AT::deallocate(m_alloc, begin, size_type(end - begin));
   }
 
-  void d_destroy_range(pointer begin, pointer end) noexcept {
+  void m_destroy_range(pointer begin, pointer end) noexcept {
     if constexpr (!std::is_trivially_destructible_v<T>) {
       for (; end - begin >= 4; begin += 4) {
         AT::destroy(m_alloc, begin);
@@ -223,17 +223,17 @@ private:
     }
   }
 
-  void d_destroy_item(pointer item) noexcept {
+  void m_destroy_item(pointer item) noexcept {
     if constexpr (!std::is_trivially_destructible_v<T>) {
       AT::destroy(m_alloc, item);
     }
   }
 
-  template <class... Args> void d_construct_item(pointer ptr, Args &&...args) {
+  template <class... Args> void m_construct_item(pointer ptr, Args &&...args) {
     AT::construct(m_alloc, ptr, std::forward<Args>(args)...);
   }
 
-  void d_move_range(pointer src_begin, pointer src_end, pointer dest) {
+  void m_move_range(pointer src_begin, pointer src_end, pointer dest) {
     if constexpr (std::is_trivially_copyable_v<T>) {
       std::memcpy(dest, src_begin, size_type(src_end - src_begin) * sizeof(T));
     } else {
@@ -241,7 +241,7 @@ private:
     }
   };
 
-  void d_copy_range(pointer src_begin, pointer src_end, pointer dest) {
+  void m_copy_range(pointer src_begin, pointer src_end, pointer dest) {
     if constexpr (std::is_trivially_copyable_v<T>) {
       std::memcpy(dest, src_begin, size_type(src_end - src_begin) * sizeof(T));
     } else {
@@ -255,7 +255,15 @@ private:
     std::swap(a.m_capacity, b.m_capacity);
   }
 
-  size_type m_calc_growth() { return capacity() == 0 ? 1 : capacity() * 2; }
+  size_type m_calc_growth() {
+    if (capacity() == 0) {
+      return 1;
+    } else if (capacity() <= 1024) {
+      return capacity() * 2;
+    } else {
+      return capacity() * 3 / 2;
+    }
+  }
 };
 
 } // namespace core
