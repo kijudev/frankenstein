@@ -24,5 +24,29 @@ public:
   using const_iterator = const T *;
   using reverse_iterator = std::reverse_iterator<T *>;
   using const_reverse_iterator = std::reverse_iterator<const T *>;
+
+private:
+  Allocator m_alloc = Allocator();
+  pointer m_begin, m_end, m_capacity = nullptr;
+
+public:
+  DynamicArray() = default;
+
+  explicit DynamicArray(const Allocator &alloc) : m_alloc(alloc) {}
+
+  explicit DynamicArray(size_type size, const Allocator &alloc = Allocator())
+      : m_alloc(alloc) {
+    reserve_exact(size);
+  }
+
+  template <class It, class Category =
+                          typename std::iterator_traits<It>::iterator_category>
+  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
+      : m_alloc(alloc) {}
+
+public:
+  void reserve(size_type size) {}
+  void reserve_exact(size_type size) {}
 };
+
 } // namespace core
