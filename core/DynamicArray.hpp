@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <exception>
+#include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -51,14 +52,43 @@ public:
   explicit DynamicArray(const Allocator &alloc) : m_alloc(alloc) {}
   DynamicArray(size_type size, const Allocator &alloc = Allocator())
       : m_alloc(alloc) {
-    reserve_exact(size);
+    resize_exact(size);
+  }
+
+  DynamicArray(std::initializer_list<T> il,
+               const Allocator &alloc = Allocator())
+      : DynamicArray(il.begin(), il.end(), alloc) {}
+
+  template <class It, class Category =
+                          typename std::iterator_traits<It>::iterator_category>
+  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
+      : DynamicArray(first, last, alloc, Category()) {}
+
+  template <class ForwardIterator>
+  DynamicArray(ForwardIterator first, ForwardIterator last,
+               const Allocator &alloc, std::forward_iterator_tag)
+      : m_alloc(alloc) {
+    resize_exact(std::distance(first, last));
+    m_copy_range(first, last, m_first);
+  }
+
+  template <class InputIterator>
+  DynamicArray(InputIterator first, InputIterator last, const Allocator &alloc,
+               std::input_iterator_tag)
+      : m_alloc(alloc) {
+    for (; first != last; ++first) {
+      emplace_back(*first);
+    }
   }
 
   DynamicArray(const DynamicArray &other)
       : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)) {
-    reserve_exact(size_type(other.m_last - other.m_first));
+    resize_exact(size_type(other.m_last - other.m_first));
     m_copy_range(other.m_first, other.m_last, m_first);
   }
+
+  DynamicArray(const DynamicArray &other, const Allocator &alloc)
+      : DynamicArray(other.begin(), other.end(), alloc) {}
 
   DynamicArray(DynamicArray &&other) noexcept
       : m_alloc(std::move(other.m_alloc)), m_first(other.m_first),
@@ -66,12 +96,16 @@ public:
     other.m_first = nullptr;
     other.m_last = nullptr;
     other.m_capacity = nullptr;
-  };
+  }
 
-  template <class It, class Category =
-                          typename std::iterator_traits<It>::iterator_category>
-  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
-      : DynamicArray(first, last, alloc, Category()) {}
+  DynamicArray(DynamicArray &&other, const Allocator &alloc) : m_alloc(alloc) {
+    if (m_alloc == other.m_alloc) {
+      s_swap(*this, other);
+    } else {
+      resize_exact(other.size());
+      m_move_range(other.begin(), other.end(), m_first);
+    }
+  };
 
 public:
   iterator begin() noexcept { return m_first; }
@@ -153,13 +187,8 @@ public:
 
   bool is_empty() const noexcept { return m_first == m_last; }
 
-  size_type reserve_aligned(size_type n) {
-    // TODO
-    reserve_exact(n);
-    return n;
-  }
-
-  void reserve_exact(size_type n) {
+  // TODO
+  void resize_exact(size_type n) {
     if (n <= size()) {
       return;
     }
@@ -180,7 +209,7 @@ public:
 
   template <class... Args> reference emplace_back(Args &&...args) {
     if (m_last == m_capacity) {
-      reserve_exact(m_calc_growth());
+      resize_exact(m_calc_growth());
     }
 
     m_construct_item(m_last, std::forward<Args>(args)...);
@@ -190,7 +219,7 @@ public:
 
   void push_back(const T &item) {
     if (m_last == m_capacity) {
-      reserve_exact(m_calc_growth());
+      resize_exact(m_calc_growth());
     }
 
     m_construct_item(m_last, item);
@@ -199,7 +228,7 @@ public:
 
   void push_back(T &&item) {
     if (m_last == m_capacity) {
-      reserve_exact(m_calc_growth());
+      resize_exact(m_calc_growth());
     }
 
     m_construct_item(m_last, std::move(item));
