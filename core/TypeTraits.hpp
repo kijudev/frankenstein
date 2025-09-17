@@ -20,9 +20,4 @@ struct and_t : public and_t<A, and_t<B, Rest...>> {};
 
 template <class A, class B>
 struct and_t<A, B> : public std::conditional<A::value, B, A>::type {};
-
-template <class T>
-struct is_proper_scope_guard_callback_t
-    : public and_t<is_noarg_callable_t<T>, returns_void_t<T>,
-                   std::is_nothrow_destructible<T>> {};
 } // namespace core_utils
