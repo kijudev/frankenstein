@@ -43,6 +43,10 @@ private:
   pointer m_first, m_last, m_capacity;
 
 public:
+  // =====================================================================
+  // Constructors, assignment operators, destructor
+  // =====================================================================
+
   DynamicArray()
       : m_alloc(Allocator()), m_first(nullptr), m_last(nullptr),
         m_capacity(nullptr) {};
@@ -113,6 +117,10 @@ public:
   };
 
 public:
+  // =====================================================================
+  // Iterator
+  // =====================================================================
+
   iterator begin() noexcept { return m_first; }
   const_iterator begin() const noexcept { return m_first; }
   iterator end() noexcept { return m_last; }
@@ -135,6 +143,10 @@ public:
   const_reverse_iterator crend() const noexcept {
     return const_reverse_iterator(begin());
   }
+
+  // =====================================================================
+  // Access
+  // =====================================================================
 
   reference operator[](size_type idx) { return m_first[idx]; }
   const_reference operator[](size_type idx) const { return m_first[idx]; }
@@ -181,7 +193,12 @@ public:
   pointer data() noexcept { return m_first; }
   const_pointer data() const noexcept { return m_first; }
 
+  // =====================================================================
+  // Info
+  // =====================================================================
+
   size_type size() const noexcept { return size_type(m_last - m_first); }
+
   size_type max_size() const noexcept {
     return std::numeric_limits<size_type>::max();
   }
@@ -192,30 +209,9 @@ public:
 
   bool is_empty() const noexcept { return m_first == m_last; }
 
-  void reserve(size_type n) { resize(size() + n); }
-
-  void resize(size_type n) {
-    if (n <= size()) {
-      throw std::out_of_range(
-          "DynamicArray => Cannot resize to a smaller or same size.");
-    }
-
-    pointer new_begin = m_allocate(n);
-    pointer new_end = new_begin + size();
-    pointer new_capacity = new_begin + n;
-    auto guard =
-        MakeScopeGuard([&]() { m_deallocate(new_begin, new_capacity); });
-
-    if (m_first != nullptr) [[likely]] {
-      m_move_range(m_first, m_last, new_begin);
-      m_deallocate(m_first, m_capacity);
-    }
-
-    m_first = new_begin;
-    m_last = new_end;
-    m_capacity = new_capacity;
-    guard.dismiss();
-  }
+  // =====================================================================
+  // Modifiers
+  // =====================================================================
 
   template <class... Args> reference emplace_back(Args &&...args) {
     if (m_last == m_capacity) {
@@ -254,7 +250,36 @@ public:
     m_destroy_item(m_last);
   }
 
+  void reserve(size_type n) { resize(size() + n); }
+
+  void resize(size_type n) {
+    if (n <= size()) {
+      throw std::out_of_range(
+          "DynamicArray => Cannot resize to a smaller or same size.");
+    }
+
+    pointer new_begin = m_allocate(n);
+    pointer new_end = new_begin + size();
+    pointer new_capacity = new_begin + n;
+    auto guard =
+        MakeScopeGuard([&]() { m_deallocate(new_begin, new_capacity); });
+
+    if (m_first != nullptr) [[likely]] {
+      m_move_range(m_first, m_last, new_begin);
+      m_deallocate(m_first, m_capacity);
+    }
+
+    m_first = new_begin;
+    m_last = new_end;
+    m_capacity = new_capacity;
+    guard.dismiss();
+  }
+
 private:
+  // =====================================================================
+  // Helpers
+  // =====================================================================
+
   pointer m_allocate(size_type n) { return AT::allocate(m_alloc, n); }
 
   void m_deallocate(pointer first, pointer last) {
