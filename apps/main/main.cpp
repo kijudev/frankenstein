@@ -12,5 +12,8 @@ int main() {
 
   std::cout << numbers[0] << ", " << numbers[1] << ", " << numbers[2] << "\n";
 
+  numbers.pop_back();
+  std::cout << numbers.size() << "\n";
+
   return 0;
 }

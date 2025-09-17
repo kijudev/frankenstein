@@ -236,6 +236,15 @@ public:
     ++m_last;
   }
 
+  void pop_back() {
+    if (m_first == nullptr) [[unlikely]] {
+      return;
+    }
+
+    --m_last;
+    m_destroy_item(m_last);
+  }
+
 private:
   pointer m_allocate(size_type n) { return AT::allocate(m_alloc, n); }
 
