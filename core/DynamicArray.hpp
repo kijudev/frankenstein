@@ -52,7 +52,7 @@ public:
   explicit DynamicArray(const Allocator &alloc) : m_alloc(alloc) {}
   DynamicArray(size_type size, const Allocator &alloc = Allocator())
       : m_alloc(alloc) {
-    resize_exact(size);
+    resize(size);
   }
 
   DynamicArray(std::initializer_list<T> il,
@@ -68,7 +68,7 @@ public:
   DynamicArray(ForwardIterator first, ForwardIterator last,
                const Allocator &alloc, std::forward_iterator_tag)
       : m_alloc(alloc) {
-    resize_exact(std::distance(first, last));
+    resize(std::distance(first, last));
     m_copy_range(first, last, m_first);
   }
 
@@ -83,7 +83,7 @@ public:
 
   DynamicArray(const DynamicArray &other)
       : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)) {
-    resize_exact(size_type(other.m_last - other.m_first));
+    resize(size_type(other.m_last - other.m_first));
     m_copy_range(other.m_first, other.m_last, m_first);
   }
 
@@ -102,7 +102,7 @@ public:
     if (m_alloc == other.m_alloc) {
       s_swap(*this, other);
     } else {
-      resize_exact(other.size());
+      resize(other.size());
       m_move_range(other.begin(), other.end(), m_first);
     }
   };
@@ -187,8 +187,9 @@ public:
 
   bool is_empty() const noexcept { return m_first == m_last; }
 
-  // TODO
-  void resize_exact(size_type n) {
+  void reserve(size_type n) { resize(size() + n); }
+
+  void resize(size_type n) {
     if (n <= size()) {
       return;
     }
@@ -209,7 +210,7 @@ public:
 
   template <class... Args> reference emplace_back(Args &&...args) {
     if (m_last == m_capacity) {
-      resize_exact(m_calc_growth());
+      resize(m_calc_growth());
     }
 
     m_construct_item(m_last, std::forward<Args>(args)...);
@@ -219,7 +220,7 @@ public:
 
   void push_back(const T &item) {
     if (m_last == m_capacity) {
-      resize_exact(m_calc_growth());
+      resize(m_calc_growth());
     }
 
     m_construct_item(m_last, item);
@@ -228,7 +229,7 @@ public:
 
   void push_back(T &&item) {
     if (m_last == m_capacity) {
-      resize_exact(m_calc_growth());
+      resize(m_calc_growth());
     }
 
     m_construct_item(m_last, std::move(item));
