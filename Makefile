@@ -1,23 +1,29 @@
 CXX = clang++
-BIN_DIR = bin
-CORE_DIR = core
-ECS_DIR = ecs
-APPS_DIR = apps
+CXXFLAGS = -std=c++20 -g -Wall -Wextra
 
-APP_DIRS = $(filter-out $(APPS_DIR)/, $(wildcard $(APPS_DIR)/*))
-APPS = $(notdir $(APP_DIRS))
+SRCDIR = apps/main
+OBJDIR = obj
+BINDIR = bin
 
-.PHONY: all
-all: $(addprefix $(BIN_DIR)/, $(APPS))
+SOURCES = $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+TARGET = $(BINDIR)/main
 
-$(BIN_DIR):
-	mkdir -p $(BIN_DIR)
+.PHONY: all clean
 
-$(BIN_DIR)/%: $(APPS_DIR)/%/main.cpp | $(BIN_DIR)
-	@echo "Compiling $<..."
-	$(CXX) -std=c++20 $< -o $@
+all: $(TARGET)
 
-.PHONY: clean
+$(TARGET): $(OBJECTS) | $(BINDIR)
+	$(CXX) $(OBJECTS) -o $@
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+$(BINDIR):
+	mkdir -p $(BINDIR)
+
 clean:
-	@echo "Cleaning up..."
-	rm -rf $(BIN_DIR)
+	rm -rf $(OBJDIR) $(BINDIR)

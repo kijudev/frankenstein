@@ -29,7 +29,14 @@
               valgrind
               clang-tools
               cppcheck
+              bear
             ];
+
+            shellHook = ''
+              export CXXFLAGS="-stdlib=libc++"
+              export LDFLAGS="-stdlib=libc++ -lc++abi"
+            '';
           };
+
     };
 }

@@ -60,40 +60,15 @@ public:
 
   explicit DynamicArray(const Allocator &alloc) : m_alloc(alloc) {}
   DynamicArray(size_type size, const Allocator &alloc = Allocator())
-      : m_alloc(alloc) {
+      : m_alloc(alloc), m_first(nullptr), m_last(nullptr), m_capacity(nullptr) {
     resize(size);
   }
 
-  DynamicArray(std::initializer_list<T> il,
-               const Allocator &alloc = Allocator())
-      : DynamicArray(il.begin(), il.end(), alloc) {}
-
-  template <class It, class Category =
-                          typename std::iterator_traits<It>::iterator_category>
-  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
-      : DynamicArray(first, last, alloc, Category()) {}
-
-  template <class ForwardIterator>
-  DynamicArray(ForwardIterator first, ForwardIterator last,
-               const Allocator &alloc, std::forward_iterator_tag)
-      : m_alloc(alloc) {
-    resize(std::distance(first, last));
-    m_copy_range(first, last, m_first);
-  }
-
-  template <class InputIterator>
-  DynamicArray(InputIterator first, InputIterator last, const Allocator &alloc,
-               std::input_iterator_tag)
-      : m_alloc(alloc) {
-    for (; first != last; ++first) {
-      emplace_back(*first);
-    }
-  }
-
   DynamicArray(const DynamicArray &other)
-      : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)) {
-    resize(size_type(other.m_last - other.m_first));
-    m_copy_range(other.m_first, other.m_last, m_first);
+      : m_alloc(AT::select_on_copy_container_construction(other.m_alloc)),
+        m_first(nullptr), m_last(nullptr), m_capacity(nullptr) {
+    resize(std::distance(other.begin(), other.end()));
+    m_copy_range(other.begin(), other.end(), m_first);
   }
 
   DynamicArray(const DynamicArray &other, const Allocator &alloc)
@@ -107,7 +82,8 @@ public:
     other.m_capacity = nullptr;
   }
 
-  DynamicArray(DynamicArray &&other, const Allocator &alloc) : m_alloc(alloc) {
+  DynamicArray(DynamicArray &&other, const Allocator &alloc)
+      : m_alloc(alloc), m_first(nullptr), m_last(nullptr), m_capacity(nullptr) {
     if (m_alloc == other.m_alloc) {
       s_swap(*this, other);
     } else {
@@ -115,6 +91,16 @@ public:
       m_move_range(other.begin(), other.end(), m_first);
     }
   };
+
+  DynamicArray(std::initializer_list<T> il,
+               const Allocator &alloc = Allocator())
+      : DynamicArray(il.begin(), il.end(), alloc) {}
+
+  template <class It>
+  DynamicArray(It first, It last, const Allocator &alloc = Allocator())
+      : m_alloc(alloc), m_first(nullptr), m_last(nullptr), m_capacity(nullptr) {
+    assign(first, last);
+  }
 
 public:
   // =====================================================================
@@ -243,34 +229,83 @@ public:
 
   void pop_back() {
     if (m_first == nullptr) [[unlikely]] {
-      return;
+      throw std::out_of_range(
+          "DynamicArray => Cannot pop an item if the DynamicArray is empty.");
     }
 
     --m_last;
     m_destroy_item(m_last);
   }
 
+  template <class It, class Category =
+                          typename std::iterator_traits<It>::iterator_category>
+  void assign(It first, It last) {
+    size_type new_size = std::distance(first, last);
+    clear();
+
+    if (new_size > size()) {
+      pointer new_first = m_allocate(new_size);
+      pointer new_last = new_first;
+      pointer new_capacity = new_first + new_size;
+      auto guard =
+          MakeScopeGuard([&]() { m_deallocate(new_first, new_capacity); });
+
+      if (m_first != nullptr) [[likely]] {
+        m_deallocate(m_first, m_capacity);
+      }
+
+      m_first = new_first;
+      m_last = new_last;
+      m_capacity = new_capacity;
+      guard.dismiss();
+    }
+
+    assign(first, last, Category());
+  }
+
+private:
+  template <class ForwardIterator>
+  void assign(ForwardIterator first, ForwardIterator last,
+              std::forward_iterator_tag) {
+    m_copy_range_any(first, last, m_first);
+    m_last = m_capacity;
+  }
+
+  template <class InputIterator>
+  void assign(InputIterator first, InputIterator last,
+              std::input_iterator_tag) {
+    for (; first != last; ++first) {
+      emplace_back(*first);
+    }
+  }
+
+public:
+  void clear() {
+    m_destroy_range(m_first, m_last);
+    m_last = m_first;
+  }
+
   void reserve(size_type n) { resize(size() + n); }
 
   void resize(size_type n) {
     if (n <= size()) {
-      throw std::out_of_range(
-          "DynamicArray => Cannot resize to a smaller or same size.");
+      throw std::out_of_range("DynamicArray => Cannot resize to an "
+                              "DynamicArray smaller or same size.");
     }
 
-    pointer new_begin = m_allocate(n);
-    pointer new_end = new_begin + size();
-    pointer new_capacity = new_begin + n;
+    pointer new_first = m_allocate(n);
+    pointer new_last = new_first + size();
+    pointer new_capacity = new_first + n;
     auto guard =
-        MakeScopeGuard([&]() { m_deallocate(new_begin, new_capacity); });
+        MakeScopeGuard([&]() { m_deallocate(new_first, new_capacity); });
 
     if (m_first != nullptr) [[likely]] {
-      m_move_range(m_first, m_last, new_begin);
+      m_move_range(m_first, m_last, new_first);
       m_deallocate(m_first, m_capacity);
     }
 
-    m_first = new_begin;
-    m_last = new_end;
+    m_first = new_first;
+    m_last = new_last;
     m_capacity = new_capacity;
     guard.dismiss();
   }
@@ -283,7 +318,7 @@ private:
   pointer m_allocate(size_type n) { return AT::allocate(m_alloc, n); }
 
   void m_deallocate(pointer first, pointer last) {
-    AT::deallocate(m_alloc, first, size_type(last - first));
+    AT::deallocate(m_alloc, first, std::distance(first, last));
   }
 
   void m_destroy_range(pointer first, pointer last) noexcept {
@@ -319,9 +354,22 @@ private:
     }
   };
 
+  template <class It>
+  void m_copy_range_any(It src_first, It src_last, pointer dest) {
+    if constexpr (std::is_trivially_copyable_v<T> &&
+                  std::is_same_v<typename std::iterator_traits<It>::value_type,
+                                 T>) {
+      std::memcpy(dest, std::to_address(src_first),
+                  std::distance(src_first, src_last) * sizeof(T));
+    } else {
+      std::uninitialized_copy(src_first, src_last, dest);
+    }
+  }
+
   void m_copy_range(pointer src_first, pointer src_last, pointer dest) {
     if constexpr (std::is_trivially_copyable_v<T>) {
-      std::memcpy(dest, src_first, size_type(src_last - src_first) * sizeof(T));
+      std::memcpy(dest, src_first,
+                  std::distance(src_first, src_last) * sizeof(T));
     } else {
       std::uninitialized_copy(src_first, src_last, dest);
     }
