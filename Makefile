@@ -9,9 +9,11 @@ SOURCES = $(wildcard $(SRCDIR)/*.cpp)
 OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
 TARGET = $(BINDIR)/main
 
-.PHONY: all clean
+.PHONY: all build-only clean compile-commands compile-commands-force
+	
+all: compile-commands $(TARGET)
 
-all: $(TARGET)
+build-only: $(TARGET)
 
 $(TARGET): $(OBJECTS) | $(BINDIR)
 	$(CXX) $(OBJECTS) -o $@
@@ -26,4 +28,14 @@ $(BINDIR):
 	mkdir -p $(BINDIR)
 
 clean:
-	rm -rf $(OBJDIR) $(BINDIR)
+	rm -rf $(OBJDIR) $(BINDIR) compile_commands.json
+
+compile-commands: $(SOURCES)
+	@echo "Generating compile_commands.json..."
+	@bear -- $(MAKE) build-only
+	@echo "compile_commands.json generated!"
+
+compile-commands-force:
+	@echo "Force regenerating compile_commands.json..."
+	@bear -- $(MAKE) clean build-only
+	@echo "compile_commands.json regenerated!"
