@@ -1,13 +1,11 @@
-#include "../../core/ScopeGuard.hpp"
+#include "../../core/DynamicArray.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 
 int main() {
-  int n = 42;
-
-  auto g = core::MakeScopeGuard([&]() { std::cout << n << "\n "; });
-
-  std::cout << "Hello World!\n";
-  g.dismiss();
+  core::DynamicArray<int> numbers;
+  numbers.push_back(1);
+  numbers.push_back(2);
+  numbers.push_back(3);
 }

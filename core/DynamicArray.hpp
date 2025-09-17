@@ -1,5 +1,6 @@
 #pragma once
 
+#include "./ScopeGuard.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -191,12 +192,15 @@ public:
 
   void resize(size_type n) {
     if (n <= size()) {
-      return;
+      throw std::out_of_range(
+          "DynamicArray => Cannot resize to a smaller or same size.");
     }
 
     pointer new_begin = m_allocate(n);
     pointer new_end = new_begin + size();
     pointer new_capacity = new_begin + n;
+    auto guard =
+        MakeScopeGuard([&]() { m_deallocate(new_begin, new_capacity); });
 
     if (m_first != nullptr) [[likely]] {
       m_move_range(m_first, m_last, new_begin);
@@ -206,6 +210,7 @@ public:
     m_first = new_begin;
     m_last = new_end;
     m_capacity = new_capacity;
+    guard.dismiss();
   }
 
   template <class... Args> reference emplace_back(Args &&...args) {
