@@ -9,12 +9,12 @@
 #include <vector>
 
 int main() {
-  std::vector ns1 = {1, 2};
-  core::DynamicArray ns2 = {5, 6};
+    std::vector        ns1 = {1, 2};
+    core::DynamicArray ns2 = {5, 6};
 
-  ns2.assign(ns1.begin(), ns1.end());
+    ns2.assign(ns1.begin(), ns1.end());
 
-  for (size_t i = 0; i < ns2.size(); ++i) {
-    std::cout << i << " -> " << ns2[i] << "\n";
-  }
+    for (size_t i = 0; i < ns2.size(); ++i) {
+        std::cout << i << " -> " << ns2[i] << "\n";
+    }
 }
