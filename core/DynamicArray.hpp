@@ -44,9 +44,9 @@ private:
     pointer   m_first, m_last, m_capacity;
 
 public:
-    // =====================================================================
-    // Constructors, assignment operators, destructor
-    // =====================================================================
+    // =========================================================================
+    // Constructor
+    // =========================================================================
 
     DynamicArray()
         : m_alloc(Allocator())
@@ -119,10 +119,18 @@ public:
         assign(first, last);
     }
 
+    // =========================================================================
+    // Operators
+    // =========================================================================
+
+    DynamicArray& operator=(const DynamicArray& other) { }
+
+    DynamicArray& operator=(DynamicArray&& other) { }
+
 public:
-    // =====================================================================
+    // =========================================================================
     // Iterator
-    // =====================================================================
+    // =========================================================================
 
     iterator       begin() noexcept { return m_first; }
     const_iterator begin() const noexcept { return m_first; }
@@ -133,6 +141,7 @@ public:
     const_reverse_iterator rbegin() const noexcept {
         return const_reverse_iterator(end());
     }
+
     reverse_iterator       rend() noexcept { return reverse_iterator(begin()); }
     const_reverse_iterator rend() const noexcept {
         return const_reverse_iterator(begin());
@@ -147,9 +156,9 @@ public:
         return const_reverse_iterator(begin());
     }
 
-    // =====================================================================
+    // =========================================================================
     // Access
-    // =====================================================================
+    // =========================================================================
 
     reference       operator[](size_type idx) { return m_first[idx]; }
     const_reference operator[](size_type idx) const { return m_first[idx]; }
@@ -196,9 +205,9 @@ public:
     pointer       data() noexcept { return m_first; }
     const_pointer data() const noexcept { return m_first; }
 
-    // =====================================================================
+    // =========================================================================
     // Info
-    // =====================================================================
+    // =========================================================================
 
     size_type size() const noexcept { return size_type(m_last - m_first); }
 
@@ -212,9 +221,9 @@ public:
 
     bool is_empty() const noexcept { return m_first == m_last; }
 
-    // =====================================================================
+    // =========================================================================
     // Modifiers
-    // =====================================================================
+    // =========================================================================
 
     template <class... Args>
     reference emplace_back(Args&&... args) {
@@ -268,9 +277,6 @@ public:
             pointer new_last     = new_first;
             pointer new_capacity = new_first + new_size;
 
-            auto guard = MakeScopeGuard(
-                [&]() { m_deallocate(new_first, new_capacity); });
-
             if (m_first != nullptr) [[likely]] {
                 m_deallocate(m_first, m_capacity);
             }
@@ -278,7 +284,6 @@ public:
             m_first    = new_first;
             m_last     = new_last;
             m_capacity = new_capacity;
-            guard.dismiss();
         }
 
         assign(first, last, Category());
@@ -308,25 +313,46 @@ public:
         m_last = m_first;
     }
 
-    void reserve(size_type n) { resize(size() + n); }
+    void reserve(size_type n) {
+        if (size() + n > capacity()) {
+            resize(size() + n);
+        }
+    }
 
     void resize(size_type n) {
-        if (n <= size()) {
-            throw std::out_of_range(
-                "DynamicArray => Cannot resize to an "
-                "DynamicArray smaller or same size.");
+        if (n == 0) [[unlikely]] {
+            clear();
+            m_deallocate(m_first, m_capacity);
+
+            m_first    = nullptr;
+            m_last     = nullptr;
+            m_capacity = nullptr;
+
+            return;
+        }
+
+        if (n == size()) [[unlikely]] {
+            return;
         }
 
         pointer new_first    = m_allocate(n);
-        pointer new_last     = new_first + size();
+        pointer new_last     = n > size() ? new_first + size() : new_first + n;
         pointer new_capacity = new_first + n;
 
         auto guard
             = MakeScopeGuard([&]() { m_deallocate(new_first, new_capacity); });
 
-        if (m_first != nullptr) [[likely]] {
-            m_move_range(m_first, m_last, new_first);
-            m_deallocate(m_first, m_capacity);
+        if (n > size()) {
+            if (m_first != nullptr) [[likely]] {
+                m_move_range(m_first, m_last, new_first);
+                m_deallocate(m_first, m_capacity);
+            }
+        } else {
+            if (m_first != nullptr) [[likely]] {
+                m_destroy_range(m_first + n, m_last);
+                m_move_range(m_first, m_first + n, new_first);
+                m_deallocate(m_first, m_capacity);
+            }
         }
 
         m_first    = new_first;
@@ -336,16 +362,22 @@ public:
     }
 
 private:
-    // =====================================================================
+    // =========================================================================
     // Helpers
-    // =====================================================================
+    // =========================================================================
 
+    // Allocation can always throw
     pointer m_allocate(size_type n) { return AT::allocate(m_alloc, n); }
 
-    void m_deallocate(pointer first, pointer last) {
+    // Deallocation MUST not throw
+    // https://en.cppreference.com/w/cpp/named_req/Allocator
+    // =========================================================================
+    void m_deallocate(pointer first, pointer last) noexcept {
         AT::deallocate(m_alloc, first, std::distance(first, last));
     }
 
+    // Assuming the destructor of T does not throw
+    // Same as STL
     void m_destroy_range(pointer first, pointer last) noexcept {
         if constexpr (!std::is_trivially_destructible_v<T>) {
             for (; last - first >= 4; first += 4) {
@@ -361,28 +393,74 @@ private:
         }
     }
 
+    // Assuming the destructor of T does not throw
+    // Same as STL
     void m_destroy_item(pointer item) noexcept {
         if constexpr (!std::is_trivially_destructible_v<T>) {
             AT::destroy(m_alloc, item);
         }
     }
 
+    // Conidionally does not throw
+    void m_init_range(pointer first, pointer last) noexcept(
+        std::is_nothrow_default_constructible_v<T>) {
+
+        // Initializing to an empty memory block is only possible if T
+        // is_trivially_copyable
+        // https://en.cppreference.com/w/cpp/string/byte/memset.html
+        // =================================================================
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memset(first, 0, std::distance(first, last) * sizeof(T));
+        } else {
+            if constexpr (std::is_nothrow_default_constructible_v<T>) {
+                for (; first != last; ++first) {
+                    AT::construct(m_alloc, first);
+                }
+            } else {
+                pointer current = first;
+
+                try {
+                    for (; current != last; ++current) {
+                        AT::construct(m_alloc, current);
+                    }
+                } catch (...) {
+                    if constexpr (!std::is_trivially_destructible_v<T>) {
+                        for (pointer ptr = first; ptr != current; ++ptr) {
+                            AT::destroy(m_alloc, ptr);
+                        }
+                    }
+
+                    throw;
+                }
+            }
+        }
+    }
+
+    // Coditionally does not throw
     template <class... Args>
-    void m_construct_item(pointer ptr, Args&&... args) {
+    void m_construct_item(pointer ptr, Args&&... args) noexcept(
+        std::is_nothrow_constructible_v<T>) {
         AT::construct(m_alloc, ptr, std::forward<Args>(args)...);
     }
 
-    void m_move_range(pointer src_first, pointer src_last, pointer dest) {
+    // Coditionally does not throw
+    void
+    m_move_range(pointer src_first, pointer src_last, pointer dest) noexcept(
+        std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
-                dest, src_first, size_type(src_last - src_first) * sizeof(T));
+                dest,
+                src_first,
+                std::distance(src_first, src_last) * sizeof(T));
         } else {
             std::uninitialized_move(src_first, src_last, dest);
         }
     };
 
+    // Coditionally does not throw
     template <class It>
-    void m_copy_range_any(It src_first, It src_last, pointer dest) {
+    void m_copy_range_any(It src_first, It src_last, pointer dest) noexcept(
+        std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (
             std::is_trivially_copyable_v<T>
             && std::
@@ -396,7 +474,10 @@ private:
         }
     }
 
-    void m_copy_range(pointer src_first, pointer src_last, pointer dest) {
+    // Coditionally does not throw
+    void
+    m_copy_range(pointer src_first, pointer src_last, pointer dest) noexcept(
+        std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 dest,
@@ -407,13 +488,7 @@ private:
         }
     }
 
-    static void s_swap(DynamicArray& a, DynamicArray& b) noexcept {
-        std::swap(a.m_first, b.m_first);
-        std::swap(a.m_last, b.m_last);
-        std::swap(a.m_capacity, b.m_capacity);
-    }
-
-    size_type m_calc_growth() {
+    size_type m_calc_growth() noexcept {
         if (capacity() == 0) {
             return 1;
         } else if (capacity() <= 1024) {
@@ -421,6 +496,12 @@ private:
         } else {
             return capacity() * 3 / 2;
         }
+    }
+
+    static void s_swap(DynamicArray& a, DynamicArray& b) noexcept {
+        std::swap(a.m_first, b.m_first);
+        std::swap(a.m_last, b.m_last);
+        std::swap(a.m_capacity, b.m_capacity);
     }
 };
 
