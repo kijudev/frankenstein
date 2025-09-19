@@ -5,13 +5,16 @@
 #include "TypeTraits.hpp"
 #include <concepts>
 #include <cstddef>
+#include <cstring>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 
 namespace core {
-template <class T, class Allocator = std::allocator<T>>
+template <typename T, typename Allocator = std::allocator<T>>
 class DynamicArray {
     // =========================================================================
     // Typedefs, members
@@ -33,6 +36,7 @@ public:
     using const_iterator         = const T*;
     using reverse_iterator       = std::reverse_iterator<T*>;
     using const_reverse_iterator = std::reverse_iterator<const T*>;
+    using iterator_category      = std::random_access_iterator_tag;
 
 private:
     Allocator m_allocator;
@@ -60,7 +64,7 @@ public:
 
     DynamicArray(std::initializer_list<T> il, const Allocator& a) { }
 
-    template <class It>
+    template <typename It>
     DynamicArray(It first, It last, const Allocator& a = Allocator()) { }
 
     DynamicArray operator=(const DynamicArray& other) { }
@@ -216,6 +220,74 @@ private:
         }
 
         return m_last[-1];
+    }
+
+    void
+    impl_move_range(pointer src_first, pointer src_last, pointer dest) noexcept(
+        std::is_nothrow_move_constructible_v<T>) {
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memcpy(
+                dest,
+                std::to_address(src_first),
+                std::distance(src_first, src_last) * sizeof(T));
+        } else {
+            std::uninitialized_move(src_first, src_last, dest);
+        }
+    }
+
+    // Optimization of std::unitnilialized_copy for trivially copyable
+    // types is not guaranteed by the standard
+    // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
+    // The optimization is implemented manually
+    template <std::input_iterator It>
+    void impl_copy_range_iterator(
+        pointer src_first,
+        pointer src_last,
+        pointer dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+        if constexpr (
+            std::is_trivially_copyable_v<T> && std::contiguous_iterator<It>
+            && std::
+                is_same_v<typename std::iterator_traits<It>::value_type, T>) {
+            std::memcpy(
+                dest,
+                std::to_address(src_first),
+                std::distance(src_first, src_last) * sizeof(T));
+
+        } else {
+            std::uninitialized_copy(src_first, src_last, dest);
+        }
+    }
+
+    // Optimization of std::unitnilialized_copy for trivially copyable
+    // types is not guaranteed by the standard
+    // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
+    // The optimization is implemented manually
+    void impl_copy_range_raw(
+        pointer src_first,
+        pointer src_last,
+        pointer dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memcpy(
+                dest,
+                src_first,
+                std::distance(src_first, src_last) * sizeof(T));
+
+        } else {
+            std::uninitialized_copy(src_first, src_last, dest);
+        }
+    }
+
+    inline size_type m_calc_growth() noexcept {
+        return capacity() == 0 ?
+                   1 :
+                   (capacity() * sizeof(T) <= 0x1000 ? capacity() * 2 :
+                                                       capacity() * 3 / 2);
+    }
+
+    inline void impl_swap(DynamicArray& other) noexcept {
+        std::swap(m_first, other.m_first);
+        std::swap(m_last, other.m_last);
+        std::swap(m_capacity, other.m_capacity);
     }
 };
 }

@@ -11,22 +11,22 @@
 
 namespace core_type {
 
-template <class T>
+template <typename T>
 concept NoArgCallable = requires(T&& t) {
     { t() };
     { std::forward<T>(t)() };
 };
 
-template <class T>
+template <typename T>
 concept ReturnsVoid = requires(T&& t) {
     { t() };
     { std::forward<T>(t)() } -> std::same_as<void>;
 };
 
-template <class T>
+template <typename T>
 concept NothrowDestructible = std::is_nothrow_destructible_v<T>;
 
-template <class Allocator>
+template <typename Allocator>
 concept HasMaxSize = requires(const Allocator& a) {
     { a.max_size() } -> std::convertible_to<std::size_t>;
 };

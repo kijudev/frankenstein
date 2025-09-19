@@ -10,7 +10,7 @@
 
 namespace core {
 
-template <class Callback>
+template <typename Callback>
 concept ScopeGuardCallback
     = core_type::NoArgCallable<Callback> && core_type::ReturnsVoid<Callback>
       && core_type::NothrowDestructible<Callback>;
