@@ -54,7 +54,7 @@ public:
 
     explicit DynamicArray(const Allocator& a) { }
 
-    explicit DynamicArray(size_type size, const Allocator& a = Allocator()) { }
+    explicit DynamicArray(size_type sz, const Allocator& a = Allocator()) { }
 
     DynamicArray(const DynamicArray& other) { }
 
@@ -224,10 +224,28 @@ private:
         return m_last[-1];
     }
 
-    template <typename... Args>
-    void impl_construct_item(pointer p, Args&&... args) noexcept(
-        std::is_nothrow_constructible_v<T, Args...>) {
-        AT::construct(m_allocator, p, std::forward<Args>(args)...);
+    [[nodiscard]] pointer m_allocate(size_type sz) {
+        return AT::allocate(m_allocator, sz);
+    }
+
+    void impl_deallocate(pointer first, pointer last) noexcept {
+        AT::deallocate(m_allocator, first, std::distance(first, last));
+    }
+
+    void impl_destroy_range(pointer first, pointer last) noexcept(
+        std::is_nothrow_destructible_v<T>) {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            for (; first != last; ++first) {
+                AT::destroy(m_allocator, first);
+            }
+        }
+    }
+
+    void
+    impl_destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            AT::destroy(m_allocator, p);
+        }
     }
 
     void impl_init_range(pointer first, pointer last) noexcept(
@@ -257,6 +275,12 @@ private:
                 guard.dismiss();
             }
         }
+    }
+
+    template <typename... Args>
+    void impl_construct_item(pointer p, Args&&... args) noexcept(
+        std::is_nothrow_constructible_v<T, Args...>) {
+        AT::construct(m_allocator, p, std::forward<Args>(args)...);
     }
 
     void
