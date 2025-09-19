@@ -224,7 +224,13 @@ private:
         return m_last[-1];
     }
 
-    [[nodiscard]] pointer m_allocate(size_type sz) {
+    void impl_destroy_deallocate(pointer first, pointer last) noexcept(
+        std::is_nothrow_destructible_v<T>) {
+        impl_destroy_range(first, last);
+        impl_destroy_deallocate(first, last);
+    }
+
+    [[nodiscard]] pointer impl_allocate(size_type sz) {
         return AT::allocate(m_allocator, sz);
     }
 
