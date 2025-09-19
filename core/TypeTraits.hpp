@@ -4,24 +4,31 @@
 
 #pragma once
 
+#include <concepts>
+#include <cstddef>
 #include <type_traits>
 
-namespace core_utils {
+namespace core_type {
 
 template <class T, class = void>
-struct is_noarg_callable_t : public std::false_type { };
+struct IsNoArgCallable : public std::false_type { };
 
 template <class T>
-struct is_noarg_callable_t<T, decltype(std::declval<T&&>()())>
+struct IsNoArgCallable<T, decltype(std::declval<T&&>()())>
     : public std::true_type { };
 
 template <class T>
-struct returns_void_t
+struct ReturnsVoid
     : public std::is_same<void, decltype(std::declval<T&&>()())> { };
 
 template <class A, class B, class... Rest>
-struct and_t : public and_t<A, and_t<B, Rest...>> { };
+struct And : public And<A, And<B, Rest...>> { };
 
 template <class A, class B>
-struct and_t<A, B> : public std::conditional<A::value, B, A>::type { };
+struct And<A, B> : public std::conditional<A::value, B, A>::type { };
+
+template <class Allocator>
+concept HasMaxSize = requires(const Allocator& a) {
+    { a.max_size() } -> std::convertible_to<std::size_t>;
+};
 } // namespace core_utils

@@ -12,9 +12,9 @@ namespace core {
 namespace impl {
 template <class T>
 struct is_scope_guard_callback_t
-    : public core_utils::and_t<
-          core_utils::is_noarg_callable_t<T>,
-          core_utils::returns_void_t<T>,
+    : public core_type::And<
+          core_type::IsNoArgCallable<T>,
+          core_type::ReturnsVoid<T>,
           std::is_nothrow_destructible<T>> { };
 
 } // namespace impl
