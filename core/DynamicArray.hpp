@@ -153,7 +153,7 @@ public:
     // =========================================================================
     // Access
     // =========================================================================
-
+public:
     reference operator[](size_type i) {
         return const_cast<reference>(
             static_cast<const DynamicArray&>(*this).impl_bound_checked_at(i));
@@ -195,6 +195,50 @@ public:
     // =========================================================================
     // Modifiers
     // =========================================================================
+public:
+    template <typename... Args>
+    reference emplace_back(Args&&... args) { }
+
+    void push_back(const T& item) { }
+
+    void push_back(T&& item) { }
+
+    template <typename... Args>
+    iterator emplace(const_iterator pos, Args&&... args) { }
+
+    iterator insert_item(const_iterator pos, const T& item) { }
+
+    iterator insert_item(const_iterator pos, T&& item) { }
+
+    iterator insert_fill(const_iterator pos, size_type count, const T& item) { }
+
+    template <std::input_iterator It>
+    iterator insert_range(const_iterator pos, It first, It last) { }
+
+    iterator insert_range(const_iterator pos, std::initializer_list<T> il) { }
+
+    void assign_fill(size_type count, const T& item) { }
+
+    template <std::input_iterator It>
+    void assign_range(It first, It last) { }
+
+    void pop_back() { }
+
+    iterator erase_item(const_iterator pos) { }
+
+    iterator erase_range(const_iterator first, const_iterator last) { }
+
+    void reserve(size_type sz) { }
+
+    void shrink_to_fit() { }
+
+    void shirnk(size_type sz) { }
+
+    void grow(size_type sz) { }
+
+    void clear(size_type sz) { }
+
+    void swap(DynamicArray& other) { impl_swap(other); }
 
     // =========================================================================
     // Impl
