@@ -2,10 +2,12 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
+#include "ScopeGuard.hpp"
 #include "TypeTraits.hpp"
 #include <concepts>
 #include <cstddef>
 #include <cstring>
+#include <exception>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
@@ -222,6 +224,41 @@ private:
         return m_last[-1];
     }
 
+    template <typename... Args>
+    void impl_construct_item(pointer p, Args&&... args) noexcept(
+        std::is_nothrow_constructible_v<T, Args...>) {
+        AT::construct(m_allocator, p, std::forward<Args>(args)...);
+    }
+
+    void impl_init_range(pointer first, pointer last) noexcept(
+        std::is_nothrow_default_constructible_v<T>
+        || std::is_trivially_default_constructible_v<T>) {
+        if constexpr (std::is_trivially_default_constructible_v<T>) {
+            std::memset(first, 0, std::distance(first, last) * sizeof(T));
+        } else {
+            if constexpr (
+                std::is_nothrow_default_constructible_v<T>
+                || std::is_trivially_destructible_v<T>) {
+                for (; first != last; ++first) {
+                    AT::construct(m_allocator, first);
+                }
+            } else {
+                pointer    current = first;
+                ScopeGuard guard([&]() {
+                    for (pointer p = first; p != current; ++p) {
+                        AT::destroy(m_allocator, p);
+                    }
+                });
+
+                for (; current != last; ++current) {
+                    AT::construct(m_allocator, current);
+                }
+
+                guard.dismiss();
+            }
+        }
+    }
+
     void
     impl_move_range(pointer src_first, pointer src_last, pointer dest) noexcept(
         std::is_nothrow_move_constructible_v<T>) {
@@ -235,7 +272,7 @@ private:
         }
     }
 
-    // Optimization of std::unitnilialized_copy for trivially copyable
+    // Optimization of std::uninilialized_copy for trivially copyable
     // types is not guaranteed by the standard
     // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
     // The optimization is implemented manually
@@ -258,7 +295,7 @@ private:
         }
     }
 
-    // Optimization of std::unitnilialized_copy for trivially copyable
+    // Optimization of std::uninilialized_copy for trivially copyable
     // types is not guaranteed by the standard
     // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
     // The optimization is implemented manually
@@ -279,7 +316,7 @@ private:
 
     inline size_type m_calc_growth() noexcept {
         return capacity() == 0 ?
-                   1 :
+                   2 :
                    (capacity() * sizeof(T) <= 0x1000 ? capacity() * 2 :
                                                        capacity() * 3 / 2);
     }
