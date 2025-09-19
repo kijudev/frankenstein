@@ -9,27 +9,14 @@
 #include <utility>
 
 namespace core {
-namespace impl {
-template <class T>
-struct is_scope_guard_callback_t
-    : public core_type::And<
-          core_type::IsNoArgCallable<T>,
-          core_type::ReturnsVoid<T>,
-          std::is_nothrow_destructible<T>> { };
-
-} // namespace impl
-
-template <
-    class Callback,
-    class = typename std::enable_if<
-        impl::is_scope_guard_callback_t<Callback>::value>::type>
-class ScopeGuard;
 
 template <class Callback>
-ScopeGuard<Callback> MakeScopeGuard(Callback&& cb);
+concept ScopeGuardCallback
+    = core_type::NoArgCallable<Callback> && core_type::ReturnsVoid<Callback>
+      && core_type::NothrowDestructible<Callback>;
 
-template <class Callback>
-class ScopeGuard<Callback> final {
+template <ScopeGuardCallback Callback>
+class ScopeGuard {
 private:
     Callback m_callback;
     bool     m_active;
@@ -59,8 +46,4 @@ public:
     void dismiss() noexcept { m_active = false; }
 };
 
-template <class Callback>
-ScopeGuard<Callback> MakeScopeGuard(Callback&& cb) {
-    return ScopeGuard<Callback>(std::forward<Callback>(cb));
-}
 } // namespace core

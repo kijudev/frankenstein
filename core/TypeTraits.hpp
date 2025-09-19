@@ -7,25 +7,24 @@
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace core_type {
 
-template <class T, class = void>
-struct IsNoArgCallable : public std::false_type { };
+template <class T>
+concept NoArgCallable = requires(T&& t) {
+    { t() };
+    { std::forward<T>(t)() };
+};
 
 template <class T>
-struct IsNoArgCallable<T, decltype(std::declval<T&&>()())>
-    : public std::true_type { };
+concept ReturnsVoid = requires(T&& t) {
+    { t() };
+    { std::forward<T>(t)() } -> std::same_as<void>;
+};
 
 template <class T>
-struct ReturnsVoid
-    : public std::is_same<void, decltype(std::declval<T&&>()())> { };
-
-template <class A, class B, class... Rest>
-struct And : public And<A, And<B, Rest...>> { };
-
-template <class A, class B>
-struct And<A, B> : public std::conditional<A::value, B, A>::type { };
+concept NothrowDestructible = std::is_nothrow_destructible_v<T>;
 
 template <class Allocator>
 concept HasMaxSize = requires(const Allocator& a) {
