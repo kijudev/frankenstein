@@ -130,7 +130,7 @@ public:
     }
 
     [[nodiscard]] constexpr size_type max_capacity() const noexcept {
-        return max_capacity();
+        return max_size();
     }
 
     [[nodiscard]] size_type size() const noexcept {
@@ -155,36 +155,48 @@ public:
     // =========================================================================
 public:
     reference operator[](size_type i) {
-        return const_cast<reference>(
-            static_cast<const DynamicArray&>(*this).impl_bound_checked_at(i));
+        impl_index_bound_check(i);
+        return m_first[i];
     }
     const_reference operator[](size_type i) const {
-        return impl_bound_checked_at(i);
+        impl_index_bound_check(i);
+        return m_first[i];
     }
 
     reference at(size_type i) {
-        return const_cast<reference>(
-            static_cast<const DynamicArray&>(*this).impl_bound_checked_at(i));
+        impl_index_bound_check(i);
+        return m_first[i];
     }
-    const_reference at(size_type i) const { return impl_bound_checked_at(i); }
+    const_reference at(size_type i) const {
+        impl_index_bound_check(i);
+        return m_first[i];
+    }
 
     reference       unsafe_at(size_type i) noexcept { return m_first[i]; }
     const_reference unsafe_at(size_type i) const noexcept { return m_first[i]; }
 
     reference front() {
-        return const_cast<reference>(
-            static_cast<const DynamicArray&>(*this).impl_bound_checked_front());
+        impl_empty_check();
+        return *m_first;
     }
-    const_reference front() const { return impl_bound_checked_front(); }
+    const_reference front() const {
+
+        impl_empty_check();
+        return *m_first;
+    }
 
     reference       unsafe_front() noexcept { return *m_first; }
     const_reference unsafe_front() const noexcept { return *m_first; }
 
     reference back() {
-        return const_cast<reference>(
-            static_cast<const DynamicArray&>(*this).impl_bound_checked_back());
+        impl_empty_check();
+        return m_last[-1];
     }
-    const_reference back() const { return impl_bound_checked_back(); }
+
+    const_reference back() const {
+        impl_empty_check();
+        return m_last[-1];
+    }
 
     reference       unsafe_back() noexcept { return m_last[-1]; }
     const_reference unsafe_back() const noexcept { return m_last[-1]; }
@@ -197,25 +209,48 @@ public:
     // =========================================================================
 public:
     template <typename... Args>
-    reference emplace_back(Args&&... args) { }
+    reference emplace_back(Args&&... args) {
+        if (is_full()) {
+            grow(impl_calc_growth());
+        }
 
-    void push_back(const T& item) { }
+        impl_construct_item(m_last, std::forward<Args>(args)...);
+        ++m_last;
+        return back();
+    }
 
-    void push_back(T&& item) { }
+    void push_back(const T& item) { emplace_back(item); }
+    void push_back(T&& item) { emplace_back(std::move(item)); }
 
     template <typename... Args>
-    iterator emplace(const_iterator pos, Args&&... args) { }
+    iterator emplace(const_iterator pos, Args&&... args) {
+        impl_iterator_bound_check(pos);
+        if (is_full()) {
+            grow(impl_calc_growth());
+        }
 
-    iterator insert_item(const_iterator pos, const T& item) { }
+        impl_move_segment_up(m_first, m_last, 1);
+        impl_construct_item(pos, std::forward<Args>(args)...);
 
-    iterator insert_item(const_iterator pos, T&& item) { }
+        return const_cast<iterator>(pos);
+    }
+
+    iterator insert_item(const_iterator pos, const T& item) {
+        return emplace(pos, item);
+    }
+
+    iterator insert_item(const_iterator pos, T&& item) {
+        return emplace(pos, std::move(item));
+    }
 
     iterator insert_fill(const_iterator pos, size_type count, const T& item) { }
 
     template <std::input_iterator It>
     iterator insert_range(const_iterator pos, It first, It last) { }
 
-    iterator insert_range(const_iterator pos, std::initializer_list<T> il) { }
+    iterator insert_range(const_iterator pos, std::initializer_list<T> il) {
+        return insert_range(pos, il.begin(), il.end());
+    }
 
     void assign_fill(size_type count, const T& item) { }
 
@@ -244,28 +279,32 @@ public:
     // Impl
     // =========================================================================
 private:
-    inline const_reference impl_bound_checked_at(size_type i) const {
+    inline void impl_iterator_bound_check(const_iterator it) const {
+        if (it < m_first || it > m_last) [[unlikely]] {
+            throw std::out_of_range("DynamicArray => Invalid iterator.");
+        }
+    }
+
+    inline void impl_index_bound_check(size_type i) const {
         if (i >= size()) [[unlikely]] {
             throw std::out_of_range("DynamicArray => Index out of range.");
         }
-
-        return m_first[i];
     }
 
-    inline const_reference impl_bound_checked_front() const {
+    inline void impl_empty_check() const {
         if (is_empty()) [[unlikely]] {
             throw std::out_of_range("DynamicArray => Array is empty.");
         }
-
-        return *m_first;
     }
 
-    inline const_reference impl_bound_checked_back() const {
-        if (is_empty()) [[unlikely]] {
-            throw std::out_of_range("DynamicArray => Array is empty.");
-        }
+    void impl_move_segment_up(pointer first, pointer last, size_type offset) {
+        std::memmove(
+            last + offset, first, std::distance(first, last) * sizeof(T));
+    }
 
-        return m_last[-1];
+    void impl_move_segmnet_down(pointer first, pointer last, size_type offset) {
+        std::memmove(
+            first - offset, first, std::distance(first, last) * sizeof(T));
     }
 
     void impl_destroy_deallocate(pointer first, pointer last) noexcept(
@@ -298,7 +337,7 @@ private:
         }
     }
 
-    void impl_init_range(pointer first, pointer last) noexcept(
+    void impl_fill_uninitialized(pointer first, pointer last) noexcept(
         std::is_nothrow_default_constructible_v<T>
         || std::is_trivially_default_constructible_v<T>) {
         if constexpr (std::is_trivially_default_constructible_v<T>) {
@@ -388,7 +427,7 @@ private:
         }
     }
 
-    inline size_type m_calc_growth() noexcept {
+    inline size_type impl_calc_growth() noexcept {
         return capacity() == 0 ?
                    2 :
                    (capacity() * sizeof(T) <= 0x1000 ? capacity() * 2 :
