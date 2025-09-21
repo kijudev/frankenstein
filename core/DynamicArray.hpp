@@ -4,6 +4,7 @@
 
 #include "ScopeGuard.hpp"
 #include "TypeTraits.hpp"
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstring>
@@ -121,19 +122,21 @@ public:
     // Info
     // =========================================================================
 public:
-    [[nodiscard]] bool is_empty() const noexcept { return size() == 0; }
+    [[nodiscard]] inline bool is_empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] bool is_full() const noexcept { return size() = capacity(); }
+    [[nodiscard]] inline bool is_full() const noexcept {
+        return size() = capacity();
+    }
 
-    [[nodiscard]] size_type capacity() const noexcept {
+    [[nodiscard]] inline size_type capacity() const noexcept {
         return std::distance(m_first, m_capacity);
     }
 
-    [[nodiscard]] constexpr size_type max_capacity() const noexcept {
+    [[nodiscard]] inline constexpr size_type max_capacity() const noexcept {
         return max_size();
     }
 
-    [[nodiscard]] size_type size() const noexcept {
+    [[nodiscard]] inline size_type size() const noexcept {
         return std::distance(m_first, m_last);
     }
 
@@ -154,14 +157,8 @@ public:
     // Access
     // =========================================================================
 public:
-    reference operator[](size_type i) {
-        impl_index_bound_check(i);
-        return m_first[i];
-    }
-    const_reference operator[](size_type i) const {
-        impl_index_bound_check(i);
-        return m_first[i];
-    }
+    reference       operator[](size_type i) { return m_first[i]; }
+    const_reference operator[](size_type i) const { return m_first[i]; }
 
     reference at(size_type i) {
         impl_index_bound_check(i);
@@ -171,9 +168,6 @@ public:
         impl_index_bound_check(i);
         return m_first[i];
     }
-
-    reference       unsafe_at(size_type i) noexcept { return m_first[i]; }
-    const_reference unsafe_at(size_type i) const noexcept { return m_first[i]; }
 
     reference front() {
         impl_empty_check();
@@ -185,9 +179,6 @@ public:
         return *m_first;
     }
 
-    reference       unsafe_front() noexcept { return *m_first; }
-    const_reference unsafe_front() const noexcept { return *m_first; }
-
     reference back() {
         impl_empty_check();
         return m_last[-1];
@@ -197,12 +188,6 @@ public:
         impl_empty_check();
         return m_last[-1];
     }
-
-    reference       unsafe_back() noexcept { return m_last[-1]; }
-    const_reference unsafe_back() const noexcept { return m_last[-1]; }
-
-    pointer       raw_data() noexcept { return m_first; }
-    const_pointer raw_data() const noexcept { return m_first; }
 
     // =========================================================================
     // Modifiers
@@ -216,7 +201,8 @@ public:
 
         impl_construct_item(m_last, std::forward<Args>(args)...);
         ++m_last;
-        return back();
+
+        return m_last[-1];
     }
 
     void push_back(const T& item) { emplace_back(item); }
@@ -229,9 +215,10 @@ public:
             grow(impl_calc_growth());
         }
 
-        impl_move_segment_up(m_first, m_last, 1);
+        impl_move_segment_up(const_cast<iterator>(pos), m_last, 1);
         impl_construct_item(pos, std::forward<Args>(args)...);
 
+        ++m_last;
         return const_cast<iterator>(pos);
     }
 
@@ -243,19 +230,153 @@ public:
         return emplace(pos, std::move(item));
     }
 
-    iterator insert_fill(const_iterator pos, size_type count, const T& item) { }
+    iterator insert_fill(const_iterator pos, size_type count, const T& item) {
+        impl_iterator_bound_check(pos);
+        if (size() + count > capacity()) {
+            grow(impl_calc_growth());
+        }
+
+        impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+
+        if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
+            for (size_type i = count; i != 0; --i) {
+                impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
+            }
+
+        } else {
+            ScopeGuard guard([&]() {
+                impl_move_segment_down(
+                    const_cast<iterator>(pos) + count, m_last + count, count);
+            });
+
+            for (size_type i = count; i != 0; --i) {
+                impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
+            }
+
+            guard.dismiss();
+        }
+
+        m_last += count;
+        return const_cast<iterator>(pos);
+    }
 
     template <std::input_iterator It>
-    iterator insert_range(const_iterator pos, It first, It last) { }
+    iterator insert_range(const_iterator pos, It first, It last) {
+        impl_iterator_bound_check(pos);
+        size_type count = std::distance(first, last);
+
+        // TODO
+        // Can opimize to reduce the number of memmove
+        if (size() + count > capacity()) {
+            grow(impl_calc_growth());
+        }
+
+        impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+
+        if constexpr (std::is_nothrow_copy_constructible_v<T>) {
+            impl_copy_range_iterator<It>(
+                first, last, const_cast<iterator>(pos));
+        } else {
+            ScopeGuard guard([&]() {
+                impl_move_segment_down(
+                    const_cast<iterator>(pos) + count, m_last + count, count);
+            });
+
+            impl_copy_range_iterator<It>(
+                first, last, const_cast<iterator>(pos));
+
+            guard.dismiss();
+        }
+
+        m_last += count;
+        return static_cast<iterator>(pos);
+    }
 
     iterator insert_range(const_iterator pos, std::initializer_list<T> il) {
         return insert_range(pos, il.begin(), il.end());
     }
 
-    void assign_fill(size_type count, const T& item) { }
+    void assign_fill(size_type count, const T& item) {
+        if (count == 0) [[unlikely]] {
+            return;
+        }
+
+        if (count > capacity()) {
+            pointer new_first    = impl_allocate(count);
+            pointer new_last     = new_first;
+            pointer new_capacity = new_first + count;
+
+            if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
+                for (; new_last != new_capacity; ++new_last) {
+                    impl_construct_item(new_last, item);
+                }
+            } else {
+                ScopeGuard guard([&]() {
+                    impl_destroy_range(new_first, new_last);
+                    impl_deallocate(new_first, new_capacity);
+                });
+
+                for (; new_last != new_capacity; ++new_last) {
+                    impl_construct_item(new_last, item);
+                }
+
+                guard.dismiss();
+            }
+
+            std::swap(m_first, new_first);
+            std::swap(m_last, new_last);
+            std::swap(m_capacity, new_capacity);
+
+            impl_destroy_range(new_first, new_capacity);
+            impl_deallocate(new_first, new_capacity);
+            return;
+        }
+
+        impl_destroy_range(m_first, m_last);
+        m_last = m_first;
+
+        if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
+            for (; m_last != m_first + count; ++m_last) {
+                impl_construct_item(m_last, item);
+            }
+        } else {
+            ScopeGuard guard([&]() { impl_destroy_range(m_first, m_last); });
+
+            for (; m_last != m_first + count; ++m_last) {
+                impl_construct_item(m_last, item);
+            }
+
+            guard.dismiss();
+        }
+    }
 
     template <std::input_iterator It>
-    void assign_range(It first, It last) { }
+    void assign_range(It first, It last) {
+        size_type count = std::distance(first, last);
+
+        if (count > capacity()) {
+            pointer new_first    = impl_allocate(count);
+            pointer new_last     = new_first + count;
+            pointer new_capacity = new_first + count;
+
+            impl_copy_range_iterator<It>(first, last, new_first);
+            impl_destroy_range(m_first, m_last);
+            impl_deallocate(m_first, m_last);
+
+            m_first    = new_first;
+            m_last     = new_last;
+            m_capacity = new_capacity;
+            return;
+        }
+
+        impl_destroy_range(m_first, m_last);
+        m_last = m_first;
+
+        impl_copy_range_iterator<It>(first, last, m_first);
+        m_last += count;
+
+        return;
+    }
 
     void pop_back() { }
 
@@ -298,19 +419,21 @@ private:
     }
 
     void impl_move_segment_up(pointer first, pointer last, size_type offset) {
-        std::memmove(
-            last + offset, first, std::distance(first, last) * sizeof(T));
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memmove(
+                last + offset, first, std::distance(first, last) * sizeof(T));
+        } else {
+            std::move_backward(first, last, last + offset);
+        }
     }
 
-    void impl_move_segmnet_down(pointer first, pointer last, size_type offset) {
-        std::memmove(
-            first - offset, first, std::distance(first, last) * sizeof(T));
-    }
-
-    void impl_destroy_deallocate(pointer first, pointer last) noexcept(
-        std::is_nothrow_destructible_v<T>) {
-        impl_destroy_range(first, last);
-        impl_destroy_deallocate(first, last);
+    void impl_move_segment_down(pointer first, pointer last, size_type offset) {
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memmove(
+                first - offset, first, std::distance(first, last) * sizeof(T));
+        } else {
+            std::move(first, last, first - offset);
+        }
     }
 
     [[nodiscard]] pointer impl_allocate(size_type sz) {
@@ -425,6 +548,18 @@ private:
         } else {
             std::uninitialized_copy(src_first, src_last, dest);
         }
+    }
+
+    inline void
+    impl_memmove(pointer src_first, pointer src_last, pointer dest) noexcept {
+        std::memmove(
+            dest, src_first, std::distance(src_first, src_last * sizeof(T)));
+    }
+
+    inline void
+    impl_memcpy(pointer src_first, pointer src_last, pointer dest) noexcept {
+        std::memcpy(
+            dest, src_first, std::distance(src_first, src_last) * sizeof(T));
     }
 
     inline size_type impl_calc_growth() noexcept {
