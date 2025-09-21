@@ -148,10 +148,7 @@ public:
         }
     }
 
-    [[nodiscard]] Allocator allocator() const noexcept {
-        return std::min(
-            AT::max_size(m_allocator), std::numeric_limits<size_type>::max());
-    }
+    [[nodiscard]] Allocator allocator() const noexcept { return m_allocator; }
 
     // =========================================================================
     // Access
@@ -174,7 +171,6 @@ public:
         return *m_first;
     }
     const_reference front() const {
-
         impl_empty_check();
         return *m_first;
     }
@@ -233,27 +229,15 @@ public:
     iterator insert_fill(const_iterator pos, size_type count, const T& item) {
         impl_iterator_bound_check(pos);
         if (size() + count > capacity()) {
-            grow(impl_calc_growth());
+            grow(size() + count);
         }
 
-        impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+        if (pos != end()) [[likely]] {
+            impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+        }
 
-        if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
-            for (size_type i = count; i != 0; --i) {
-                impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
-            }
-
-        } else {
-            ScopeGuard guard([&]() {
-                impl_move_segment_down(
-                    const_cast<iterator>(pos) + count, m_last + count, count);
-            });
-
-            for (size_type i = count; i != 0; --i) {
-                impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
-            }
-
-            guard.dismiss();
+        for (size_type i = count; i != 0; --i) {
+            impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
         }
 
         m_last += count;
@@ -266,27 +250,16 @@ public:
         size_type count = std::distance(first, last);
 
         // TODO
-        // Can opimize to reduce the number of memmove
+        // Can opimize to reduce the number of long jump memmove
         if (size() + count > capacity()) {
-            grow(impl_calc_growth());
+            grow(size() + count);
         }
 
-        impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
-
-        if constexpr (std::is_nothrow_copy_constructible_v<T>) {
-            impl_copy_range_iterator<It>(
-                first, last, const_cast<iterator>(pos));
-        } else {
-            ScopeGuard guard([&]() {
-                impl_move_segment_down(
-                    const_cast<iterator>(pos) + count, m_last + count, count);
-            });
-
-            impl_copy_range_iterator<It>(
-                first, last, const_cast<iterator>(pos));
-
-            guard.dismiss();
+        if (pos != end()) [[likely]] {
+            impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
         }
+
+        impl_copy_range_iterator<It>(first, last, const_cast<iterator>(pos));
 
         m_last += count;
         return static_cast<iterator>(pos);
@@ -306,7 +279,7 @@ public:
             pointer new_last     = new_first;
             pointer new_capacity = new_first + count;
 
-            if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
+            if constexpr (std::is_nothrow_constructible_v<T, const T&>) {
                 for (; new_last != new_capacity; ++new_last) {
                     impl_construct_item(new_last, item);
                 }
@@ -335,7 +308,7 @@ public:
         impl_destroy_range(m_first, m_last);
         m_last = m_first;
 
-        if constexpr (std::is_nothrow_constructible_v<T, decltype(item)>) {
+        if constexpr (std::is_nothrow_constructible_v<T, const T&>) {
             for (; m_last != m_first + count; ++m_last) {
                 impl_construct_item(m_last, item);
             }
@@ -354,18 +327,34 @@ public:
     void assign_range(It first, It last) {
         size_type count = std::distance(first, last);
 
+        if (count == 0) [[unlikely]] {
+            impl_destroy_range(m_first, m_last);
+            m_last = m_first;
+            return;
+        }
+
         if (count > capacity()) {
             pointer new_first    = impl_allocate(count);
             pointer new_last     = new_first + count;
             pointer new_capacity = new_first + count;
 
-            impl_copy_range_iterator<It>(first, last, new_first);
-            impl_destroy_range(m_first, m_last);
-            impl_deallocate(m_first, m_last);
+            if constexpr (std::is_nothrow_copy_constructible_v<T>) {
+                impl_copy_range_iterator<It>(first, last, new_first);
+            } else {
+                ScopeGuard guard(
+                    [&]() { impl_deallocate(new_first, new_last); });
 
-            m_first    = new_first;
-            m_last     = new_last;
-            m_capacity = new_capacity;
+                impl_copy_range_iterator<It>(first, last, new_first);
+
+                guard.dismiss();
+            }
+
+            std::swap(m_first, new_first);
+            std::swap(m_last, new_last);
+            std::swap(m_capacity, new_capacity);
+
+            impl_destroy_range(new_first, new_capacity);
+            impl_deallocate(new_first, new_capacity);
             return;
         }
 
@@ -374,13 +363,25 @@ public:
 
         impl_copy_range_iterator<It>(first, last, m_first);
         m_last += count;
-
         return;
     }
 
-    void pop_back() { }
+    void pop_back() noexcept(std::is_nothrow_destructible_v<T>) {
+        --m_last;
+        impl_destroy_item(m_last);
+    }
 
-    iterator erase_item(const_iterator pos) { }
+    iterator erase_item(const_iterator pos) noexcept(
+        std::is_nothrow_destructible_v<T>
+        && std::is_nothrow_move_constructible_v<T>) {
+        impl_iterator_bound_check(pos);
+
+        if (pos == end()) [[unlikely]] {
+            pop_back();
+        }
+
+        --m_last;
+    }
 
     iterator erase_range(const_iterator first, const_iterator last) { }
 
@@ -418,19 +419,25 @@ private:
         }
     }
 
-    void impl_move_segment_up(pointer first, pointer last, size_type offset) {
+    void impl_move_segment_up(
+        pointer   first,
+        pointer   last,
+        size_type offset) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memmove(
-                last + offset, first, std::distance(first, last) * sizeof(T));
+            impl_memmove(first, last, last + offset);
         } else {
             std::move_backward(first, last, last + offset);
         }
     }
 
-    void impl_move_segment_down(pointer first, pointer last, size_type offset) {
+    void impl_fill(pointer first, pointer last, size_type count) { }
+
+    void impl_move_segment_down(
+        pointer   first,
+        pointer   last,
+        size_type offset) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memmove(
-                first - offset, first, std::distance(first, last) * sizeof(T));
+            impl_memmove(first, last, first - offset);
         } else {
             std::move(first, last, first - offset);
         }
@@ -499,10 +506,7 @@ private:
     impl_move_range(pointer src_first, pointer src_last, pointer dest) noexcept(
         std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memcpy(
-                dest,
-                std::to_address(src_first),
-                std::distance(src_first, src_last) * sizeof(T));
+            impl_memcpy(src_first, src_last, dest);
         } else {
             std::uninitialized_move(src_first, src_last, dest);
         }
@@ -521,11 +525,7 @@ private:
             std::is_trivially_copyable_v<T> && std::contiguous_iterator<It>
             && std::
                 is_same_v<typename std::iterator_traits<It>::value_type, T>) {
-            std::memcpy(
-                dest,
-                std::to_address(src_first),
-                std::distance(src_first, src_last) * sizeof(T));
-
+            impl_memcpy(src_first, src_last, dest);
         } else {
             std::uninitialized_copy(src_first, src_last, dest);
         }
@@ -540,11 +540,7 @@ private:
         pointer src_last,
         pointer dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memcpy(
-                dest,
-                src_first,
-                std::distance(src_first, src_last) * sizeof(T));
-
+            impl_memcpy(src_first, src_last, dest);
         } else {
             std::uninitialized_copy(src_first, src_last, dest);
         }
