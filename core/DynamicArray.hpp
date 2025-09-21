@@ -211,7 +211,7 @@ public:
             grow(impl_calc_growth());
         }
 
-        impl_move_segment_up(const_cast<iterator>(pos), m_last, 1);
+        impl_move_segment_up(pos, m_last, 1);
         impl_construct_item(pos, std::forward<Args>(args)...);
 
         ++m_last;
@@ -228,16 +228,20 @@ public:
 
     iterator insert_fill(const_iterator pos, size_type count, const T& item) {
         impl_iterator_bound_check(pos);
+        if (count == 0) [[unlikely]] {
+            return const_cast<iterator>(pos);
+        }
+
         if (size() + count > capacity()) {
             grow(size() + count);
         }
 
         if (pos != end()) [[likely]] {
-            impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+            impl_move_segment_up(pos, m_last, count);
         }
 
         for (size_type i = count; i != 0; --i) {
-            impl_construct_item(const_cast<iterator>(pos) + i - 1, item);
+            impl_construct_item(pos + i - 1, item);
         }
 
         m_last += count;
@@ -247,6 +251,10 @@ public:
     template <std::input_iterator It>
     iterator insert_range(const_iterator pos, It first, It last) {
         impl_iterator_bound_check(pos);
+        if (first == last) [[unlikely]] {
+            return const_cast<iterator>(pos);
+        }
+
         size_type count = std::distance(first, last);
 
         // TODO
@@ -256,10 +264,10 @@ public:
         }
 
         if (pos != end()) [[likely]] {
-            impl_move_segment_up(const_cast<iterator>(pos), m_last, count);
+            impl_move_segment_up(pos, m_last, count);
         }
 
-        impl_copy_range_iterator<It>(first, last, const_cast<iterator>(pos));
+        impl_copy_range_iterator<It>(first, last, pos);
 
         m_last += count;
         return static_cast<iterator>(pos);
@@ -325,13 +333,13 @@ public:
 
     template <std::input_iterator It>
     void assign_range(It first, It last) {
-        size_type count = std::distance(first, last);
-
-        if (count == 0) [[unlikely]] {
+        if (first == last) [[unlikely]] {
             impl_destroy_range(m_first, m_last);
             m_last = m_first;
             return;
         }
+
+        size_type count = std::distance(first, last);
 
         if (count > capacity()) {
             pointer new_first    = impl_allocate(count);
@@ -380,20 +388,124 @@ public:
             pop_back();
         }
 
+        impl_destroy_item(pos);
+        impl_move_segment_down(pos + 1, m_last, 1);
+
         --m_last;
     }
 
-    iterator erase_range(const_iterator first, const_iterator last) { }
+    iterator erase_range(const_iterator first, const_iterator last) noexcept(
+        std::is_nothrow_destructible_v<T>
+        && std::is_nothrow_move_constructible_v<T>) {
+        impl_iterator_bound_check(first);
+        impl_iterator_bound_check(last);
 
-    void reserve(size_type sz) { }
+        if (first == last) [[unlikely]] {
+            return const_cast<iterator>(first);
+        }
 
-    void shrink_to_fit() { }
+        size_type count = std::distance(first, last);
 
-    void shirnk(size_type sz) { }
+        impl_destroy_range(first, last);
+        impl_move_segment_down(last + 1, m_last, count);
 
-    void grow(size_type sz) { }
+        m_last -= count;
+    }
 
-    void clear(size_type sz) { }
+    void reserve(size_type sz) {
+        if (size() + sz > capacity()) {
+            grow(size() + sz);
+        }
+    }
+
+    void shrink_fit() {
+        if (is_full()) [[unlikely]] {
+            return;
+        }
+
+        pointer new_first    = impl_allocate(size());
+        pointer new_last     = new_first + size();
+        pointer new_capacity = new_first + size();
+
+        if constexpr (std::is_nothrow_copy_constructible_v<T>) {
+            impl_move_range_raw(m_first, m_last, new_first);
+        } else {
+            ScopeGuard guard(
+                [&]() { impl_deallocate(new_first, new_capacity); });
+
+            impl_move_range_raw(m_first, m_last, new_first);
+
+            guard.dismiss();
+        }
+
+        std::swap(m_first, new_first);
+        std::swap(m_last, new_last);
+        std::swap(m_capacity, new_capacity);
+
+        impl_deallocate(new_first, new_capacity);
+    }
+
+    void shrink_lossy(size_type sz) {
+        if (sz >= size()) [[unlikely]] {
+            throw std::out_of_range(
+                "DynamicArray => Cannot shrink to a bigger or equal size.");
+        }
+
+        pointer new_first    = impl_allocate(size());
+        pointer new_last     = new_first + sz;
+        pointer new_capacity = new_first + sz;
+
+        if constexpr (std::is_nothrow_copy_constructible_v<T>) {
+            impl_move_range_raw(m_first, m_first + sz, new_first);
+        } else {
+            ScopeGuard guard(
+                [&]() { impl_deallocate(new_first, new_capacity); });
+
+            impl_move_range_raw(m_first, m_first + sz, new_first);
+
+            guard.dismiss();
+        }
+
+        std::swap(m_first, new_first);
+        std::swap(m_last, new_last);
+        std::swap(m_capacity, new_capacity);
+
+        impl_destroy_range(new_first + sz, new_capacity);
+        impl_deallocate(new_first, new_capacity);
+    }
+
+    void grow(size_type sz) {
+        if (sz <= size()) [[unlikely]] {
+            throw std::out_of_range(
+                "DynamicArray => Cannot grow to a smaller or equal size.");
+        }
+
+        pointer new_first    = impl_allocate(sz);
+        pointer new_last     = new_first + size();
+        pointer new_capacity = new_first + sz;
+
+        if constexpr (std::is_nothrow_copy_constructible_v<T>) {
+            impl_move_range_raw(m_first, m_first + size(), new_first);
+        } else {
+            ScopeGuard guard(
+                [&]() { impl_deallocate(new_first, new_capacity); });
+
+            impl_move_range_raw(m_first, m_first + size(), new_first);
+
+            guard.dismiss();
+        }
+
+        std::swap(m_first, new_first);
+        std::swap(m_last, new_last);
+        std::swap(m_capacity, new_capacity);
+
+        impl_deallocate(new_first, new_capacity);
+    }
+
+    void clear() noexcept(std::is_nothrow_destructible_v<T>) {
+        impl_destroy_range(m_first, m_last);
+        m_last = m_first;
+    }
 
     void swap(DynamicArray& other) { impl_swap(other); }
 
@@ -502,9 +614,10 @@ private:
         AT::construct(m_allocator, p, std::forward<Args>(args)...);
     }
 
-    void
-    impl_move_range(pointer src_first, pointer src_last, pointer dest) noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    void impl_move_range_raw(
+        pointer src_first,
+        pointer src_last,
+        pointer dest) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             impl_memcpy(src_first, src_last, dest);
         } else {
