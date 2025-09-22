@@ -752,9 +752,9 @@ private:
     }
 
     void impl_move_range_raw(
-        pointer src_first,
-        pointer src_last,
-        pointer dest) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        const_pointer src_first,
+        const_pointer src_last,
+        pointer       dest) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             impl_memcpy(src_first, src_last, dest);
         } else {
@@ -785,9 +785,9 @@ private:
     // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
     // The optimization is implemented manually
     void impl_copy_range_raw(
-        pointer src_first,
-        pointer src_last,
-        pointer dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+        const_pointer src_first,
+        const_pointer src_last,
+        pointer       dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             impl_memcpy(src_first, src_last, dest);
         } else {
@@ -795,14 +795,18 @@ private:
         }
     }
 
-    inline void
-    impl_memmove(pointer src_first, pointer src_last, pointer dest) noexcept {
+    inline void impl_memmove(
+        const_pointer src_first,
+        const_pointer src_last,
+        pointer       dest) noexcept {
         std::memmove(
             dest, src_first, std::distance(src_first, src_last) * sizeof(T));
     }
 
-    inline void
-    impl_memcpy(pointer src_first, pointer src_last, pointer dest) noexcept {
+    inline void impl_memcpy(
+        const_pointer src_first,
+        const_pointer src_last,
+        pointer       dest) noexcept {
         std::memcpy(
             dest, src_first, std::distance(src_first, src_last) * sizeof(T));
     }

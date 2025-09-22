@@ -2,15 +2,31 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
-#include "../../core/ScopeGuard.hpp"
+#include "../../core/DynamicArray.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <vector>
 
-int main() {
-    core::ScopeGuard guard(
-        [&]() { std::cout << "Hello from ScopeGuard v2\n"; });
+template <typename T>
+void print_dynamic_array(const core::DynamicArray<T>& da) {
+    std::cout << "==== core::DynamicArray ====\n";
+    for (size_t i = 0; i < da.size(); ++i) {
+        std::cout << i << " -> " << da[i] << "\n";
+    }
+}
 
-    std::cout << "Hello from main\n";
+int main() {
+    core::DynamicArray ns = {1, 2, 3, 4, 5, 6};
+
+    print_dynamic_array(ns);
+
+    ns.pop_back();
+    ns.pop_back();
+
+    print_dynamic_array(ns);
+
+    ns.shrink_fit();
+
+    print_dynamic_array(ns);
 }
