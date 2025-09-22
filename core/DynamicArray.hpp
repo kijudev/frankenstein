@@ -42,61 +42,161 @@ public:
     using iterator_category      = std::random_access_iterator_tag;
 
 private:
-    Allocator m_allocator;
-    pointer   m_first, m_last, m_capacity;
+    Allocator m_allocator {Allocator()};
+    pointer   m_first {nullptr}, m_last {nullptr}, m_capacity {nullptr};
 
     // =========================================================================
     // Destructor, constructors, assigment operators, lexical operators
     // =========================================================================
 public:
-    ~DynamicArray() { }
+    ~DynamicArray() {
+        impl_destroy_range(m_first, m_last);
+        impl_destroy_range(m_first, m_capacity);
+    }
 
-    DynamicArray() { }
+    DynamicArray() noexcept = default;
 
-    explicit DynamicArray(const Allocator& a) { }
+    explicit DynamicArray(const Allocator& a) noexcept
+        : m_allocator(a) { }
 
-    explicit DynamicArray(size_type sz, const Allocator& a = Allocator()) { }
+    explicit DynamicArray(size_type sz, const Allocator& a = Allocator())
+        : m_allocator(a) {
+        if (sz == 0) [[unlikely]] {
+            return;
+        }
 
-    DynamicArray(const DynamicArray& other) { }
+        m_first    = impl_allocate(sz);
+        m_last     = m_first;
+        m_capacity = m_first + sz;
+    }
 
-    DynamicArray(const DynamicArray& other, const Allocator& a) { }
+    DynamicArray(const DynamicArray& other)
+        : DynamicArray(
+              other,
+              AT::select_on_copy_container_construction(other.m_allocator)) { }
 
-    DynamicArray(DynamicArray&& other) { }
+    DynamicArray(const DynamicArray& other, const Allocator& a)
+        : m_allocator(a) {
+        if (other.is_empty()) [[unlikely]] {
+            return;
+        }
 
-    DynamicArray(DynamicArray&& other, const Allocator& a) { }
+        size_type sz = other.size();
+        m_first      = impl_allocate(sz);
+        m_last       = m_first + sz;
+        m_capacity   = m_first + sz;
 
-    DynamicArray(std::initializer_list<T> il, const Allocator& a) { }
+        impl_copy_range_raw(other.m_first, other.m_last, m_first);
+    }
 
-    template <typename It>
-    DynamicArray(It first, It last, const Allocator& a = Allocator()) { }
+    DynamicArray(DynamicArray&& other) noexcept
+        : m_allocator(std::move(other.m_allocator))
+        , m_first(other.m_first)
+        , m_last(other.m_last)
+        , m_capacity(other.m_capacity) {
+        other.m_first    = nullptr;
+        other.m_last     = nullptr;
+        other.m_capacity = nullptr;
+    }
 
-    DynamicArray operator=(const DynamicArray& other) { }
+    DynamicArray(DynamicArray&& other, const Allocator& a) noexcept
+        : m_allocator(a)
+        , m_first(other.m_first)
+        , m_last(other.m_last)
+        , m_capacity(other.m_capacity) {
+        other.m_first    = nullptr;
+        other.m_last     = nullptr;
+        other.m_capacity = nullptr;
+    }
 
-    DynamicArray operator=(DynamicArray&& other) { }
+    DynamicArray(std::initializer_list<T> il, const Allocator& a = Allocator())
+        : DynamicArray(il.begin(), il.end(), a) { }
 
-    bool operator==(const DynamicArray& other) const
-        requires std::equality_comparable<T>
-    { }
+    template <std::input_iterator It>
+    DynamicArray(It first, It last, const Allocator& a = Allocator())
+        : m_allocator(a) {
+        assign_range(first, last);
+    }
 
-    bool operator!=(const DynamicArray& other) const
-        requires std::equality_comparable<T>
-    { }
+    DynamicArray& operator=(const DynamicArray& other) {
+        if (*this == other) [[unlikely]] {
+            return *this;
+        }
 
-    bool operator<(const DynamicArray& other) const
-        requires std::totally_ordered<T>
-    { }
+        DynamicArray temp(other);
+        swap(temp);
+        return *this;
+    }
 
-    bool operator<=(const DynamicArray& other) const
-        requires std::totally_ordered<T>
-    { }
+    DynamicArray& operator=(DynamicArray&& other) noexcept(
+        std::is_nothrow_destructible_v<T>
+        && std::is_nothrow_move_assignable_v<T>) {
+        if (this == &other) {
+            return *this;
+        }
 
-    bool operator>(const DynamicArray& other) const
-        requires std::totally_ordered<T>
-    { }
+        impl_destroy_range(m_first, m_last);
+        impl_deallocate(m_first, m_capacity);
 
-    bool operator>=(const DynamicArray& other) const
-        requires std::totally_ordered<T>
-    { }
+        m_allocator = std::move(other.m_allocator);
+        m_first     = other.m_first;
+        m_last      = other.m_last;
+        m_capacity  = other.m_capacity;
+
+        other.m_capacity = nullptr;
+        other.m_first    = nullptr;
+        other.m_last     = nullptr;
+
+        return *this;
+    }
+
+    bool operator==(const DynamicArray& other) const {
+        if (m_first == other.m_first) {
+            return true;
+        };
+
+        if (size() != other.size()) {
+            return false;
+        }
+
+        if (is_empty() && other.is_empty()) {
+            return true;
+        }
+
+        if constexpr (std::equality_comparable<T>) {
+            for (size_type i = 0; i < size(); ++i) {
+                if (m_first[i] != other.m_first[i]) {
+                    return false;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    bool operator!=(const DynamicArray& other) const {
+        if (m_first == other.m_first) {
+            return false;
+        }
+
+        if (size() != other.size()) {
+            return true;
+        }
+
+        if (is_empty() && other.is_empty()) {
+            return false;
+        }
+
+        if constexpr (std::equality_comparable<T>) {
+            for (size_type i = 0;; ++i) {
+                if (m_first[i] == other.m_first[i]) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
 
     // =========================================================================
     // Iterator
@@ -308,8 +408,11 @@ public:
             std::swap(m_last, new_last);
             std::swap(m_capacity, new_capacity);
 
-            impl_destroy_range(new_first, new_capacity);
-            impl_deallocate(new_first, new_capacity);
+            if (m_first != nullptr) [[likely]] {
+                impl_destroy_range(new_first, new_capacity);
+                impl_deallocate(new_first, new_capacity);
+            }
+
             return;
         }
 
@@ -361,8 +464,11 @@ public:
             std::swap(m_last, new_last);
             std::swap(m_capacity, new_capacity);
 
-            impl_destroy_range(new_first, new_capacity);
-            impl_deallocate(new_first, new_capacity);
+            if (m_first != nullptr) [[likely]] {
+                impl_destroy_range(new_first, new_capacity);
+                impl_deallocate(new_first, new_capacity);
+            }
+
             return;
         }
 
@@ -449,6 +555,16 @@ public:
         if (sz >= size()) [[unlikely]] {
             throw std::out_of_range(
                 "DynamicArray => Cannot shrink to a bigger or equal size.");
+        }
+
+        if (sz == 0) [[unlikely]] {
+            impl_destroy_range(m_first, m_last);
+            impl_deallocate(m_first, m_capacity);
+
+            m_first    = nullptr;
+            m_last     = nullptr;
+            m_capacity = nullptr;
+            return;
         }
 
         pointer new_first    = impl_allocate(size());
