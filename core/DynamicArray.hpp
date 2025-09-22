@@ -51,7 +51,7 @@ private:
 public:
     ~DynamicArray() {
         impl_destroy_range(m_first, m_last);
-        impl_destroy_range(m_first, m_capacity);
+        impl_deallocate(m_first, m_capacity);
     }
 
     DynamicArray() noexcept = default;
@@ -171,7 +171,7 @@ public:
             }
         }
 
-        return false;
+        return true;
     }
 
     bool operator!=(const DynamicArray& other) const {
@@ -188,7 +188,7 @@ public:
         }
 
         if constexpr (std::equality_comparable<T>) {
-            for (size_type i = 0;; ++i) {
+            for (size_type i = 0; i < size(); ++i) {
                 if (m_first[i] == other.m_first[i]) {
                     return false;
                 }
@@ -207,16 +207,24 @@ public:
     iterator       end() noexcept { return m_last; }
     const_iterator end() const noexcept { return m_last; }
 
-    reverse_iterator       rbegin() noexcept { return m_last; }
-    const_reverse_iterator rbegin() const noexcept { return m_last; }
+    reverse_iterator rbegin() noexcept { return reverse_iterator(m_last); }
+    const_reverse_iterator rbegin() const noexcept {
+        return const_reverse_iterator(m_last);
+    }
 
-    reverse_iterator       rend() noexcept { return m_first; }
-    const_reverse_iterator rend() const noexcept { return m_first; }
+    reverse_iterator       rend() noexcept { return reverse_iterator(m_first); }
+    const_reverse_iterator rend() const noexcept {
+        return const_reverse_iterator(m_first);
+    }
 
     const_iterator         cbegin() const noexcept { return m_first; }
     const_iterator         cend() const noexcept { return m_last; }
-    const_reverse_iterator crbegin() const noexcept { return m_last; }
-    const_reverse_iterator crend() const noexcept { return m_first; }
+    const_reverse_iterator crbegin() const noexcept {
+        return const_reverse_iterator(m_last);
+    }
+    const_reverse_iterator crend() const noexcept {
+        return const_reverse_iterator(m_first);
+    }
 
     // =========================================================================
     // Info
@@ -225,7 +233,7 @@ public:
     [[nodiscard]] inline bool is_empty() const noexcept { return size() == 0; }
 
     [[nodiscard]] inline bool is_full() const noexcept {
-        return size() = capacity();
+        return size() == capacity();
     }
 
     [[nodiscard]] inline size_type capacity() const noexcept {
@@ -240,7 +248,7 @@ public:
         return std::distance(m_first, m_last);
     }
 
-    [[nodiscard]] constexpr size_type max_size() const noexcept {
+    [[nodiscard]] inline constexpr size_type max_size() const noexcept {
         if constexpr (core_type::HasMaxSize<Allocator>) {
             return AT::max_size();
         } else {
@@ -408,7 +416,7 @@ public:
             std::swap(m_last, new_last);
             std::swap(m_capacity, new_capacity);
 
-            if (m_first != nullptr) [[likely]] {
+            if (new_first != nullptr) [[likely]] {
                 impl_destroy_range(new_first, new_capacity);
                 impl_deallocate(new_first, new_capacity);
             }
@@ -464,7 +472,7 @@ public:
             std::swap(m_last, new_last);
             std::swap(m_capacity, new_capacity);
 
-            if (m_first != nullptr) [[likely]] {
+            if (new_first != nullptr) [[likely]] {
                 impl_destroy_range(new_first, new_capacity);
                 impl_deallocate(new_first, new_capacity);
             }
@@ -480,7 +488,9 @@ public:
         return;
     }
 
-    void pop_back() noexcept(std::is_nothrow_destructible_v<T>) {
+    void pop_back() {
+        impl_empty_check();
+
         --m_last;
         impl_destroy_item(m_last);
     }
@@ -491,13 +501,16 @@ public:
         impl_iterator_bound_check(pos);
 
         if (pos == end()) [[unlikely]] {
-            pop_back();
+            --m_last;
+            impl_destroy_item(m_last);
+            return end();
         }
 
         impl_destroy_item(pos);
         impl_move_segment_down(pos + 1, m_last, 1);
 
         --m_last;
+        return end();
     }
 
     iterator erase_range(const_iterator first, const_iterator last) noexcept(
@@ -516,6 +529,7 @@ public:
         impl_move_segment_down(last + 1, m_last, count);
 
         m_last -= count;
+        return const_cast<iterator>(first);
     }
 
     void reserve(size_type sz) {
@@ -594,6 +608,13 @@ public:
         if (sz <= size()) [[unlikely]] {
             throw std::out_of_range(
                 "DynamicArray => Cannot grow to a smaller or equal size.");
+        }
+
+        if (m_first == nullptr) {
+            m_first    = impl_allocate(sz);
+            m_last     = m_first;
+            m_capacity = m_first + sz;
+            return;
         }
 
         pointer new_first    = impl_allocate(sz);
@@ -746,10 +767,9 @@ private:
     // https://en.cppreference.com/w/cpp/memory/uninitialized_copy.html
     // The optimization is implemented manually
     template <std::input_iterator It>
-    void impl_copy_range_iterator(
-        pointer src_first,
-        pointer src_last,
-        pointer dest) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+    void
+    impl_copy_range_iterator(It src_first, It src_last, pointer dest) noexcept(
+        std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (
             std::is_trivially_copyable_v<T> && std::contiguous_iterator<It>
             && std::
@@ -778,7 +798,7 @@ private:
     inline void
     impl_memmove(pointer src_first, pointer src_last, pointer dest) noexcept {
         std::memmove(
-            dest, src_first, std::distance(src_first, src_last * sizeof(T)));
+            dest, src_first, std::distance(src_first, src_last) * sizeof(T));
     }
 
     inline void
