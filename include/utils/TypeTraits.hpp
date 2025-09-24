@@ -9,8 +9,8 @@
 #include <type_traits>
 #include <utility>
 
-namespace core_type {
-
+namespace frank {
+namespace utils {
 template <typename T>
 concept NoArgCallable = requires(T&& t) {
     { t() };
@@ -30,4 +30,5 @@ template <typename Allocator>
 concept HasMaxSize = requires(const Allocator& a) {
     { a.max_size() } -> std::convertible_to<std::size_t>;
 };
-} // namespace core_utils
+}
+}

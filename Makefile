@@ -1,41 +1,50 @@
-CXX = clang++
-CXXFLAGS = -std=c++20 -g -Wall -Wextra
+CXX      := clang++
+CXXOPT   := -O0 -g
+CXXFLAGS := -std=c++23 -Wall -Wextra -Iinclude 
 
-SRCDIR = apps/main
-OBJDIR = obj
-BINDIR = bin
+BOLD     := \033[1m
+BLUE     := \033[34m
+GREEN    := \033[32m
+RED      := \033[31m
+RESET    := \033[0m
 
-SOURCES = $(wildcard $(SRCDIR)/*.cpp)
-OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
-TARGET = $(BINDIR)/main
+APPS      := $(wildcard apps/*/main.cpp)
+APP_BINS  := $(patsubst apps/%/main.cpp,bin/%,$(APPS))
 
-.PHONY: all build-only clean compile-commands compile-commands-force
-	
-all: compile-commands $(TARGET)
+TESTS     := $(wildcard tests/*.cpp)
+TEST_BINS := $(patsubst tests/%.cpp,bin/tests/%,$(TESTS))
 
-build-only: $(TARGET)
+.PHONY: all apps tests clean compile-commands run-tests
 
-$(TARGET): $(OBJECTS) | $(BINDIR)
-	$(CXX) $(OBJECTS) -o $@
+all: apps tests
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+apps: $(APP_BINS)
 
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
+tests: $(TEST_BINS)
 
-$(BINDIR):
-	mkdir -p $(BINDIR)
+bin/%: apps/%/main.cpp
+	mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(CXXOPT) $< -o $@
+
+bin/tests/%: tests/%.cpp
+	mkdir -p bin/tests
+	$(CXX) $(CXXFLAGS) -O3 -g $< -o $@
 
 clean:
-	rm -rf $(OBJDIR) $(BINDIR) compile_commands.json
+	rm -rf bin
+	rm -f compile_commands.json
 
-compile-commands: $(SOURCES)
-	@echo "Generating compile_commands.json..."
-	@bear -- $(MAKE) build-only
-	@echo "compile_commands.json generated!"
+compile-commands: clean
+	bear -- make
 
-compile-commands-force:
-	@echo "Force regenerating compile_commands.json..."
-	@bear -- $(MAKE) clean build-only
-	@echo "compile_commands.json regenerated!"
+run-tests: tests
+	@set -e; \
+	for t in $(TEST_BINS); do \
+	  printf "$(BOLD)$(BLUE)Running %s$(RESET)\n" "$$t"; \
+	  if "$$t"; then \
+	    printf "$(GREEN)PASS$(RESET)\n"; \
+	  else \
+	    printf "$(RED)FAIL: %s$(RESET)\n" "$$t"; \
+	    exit 1; \
+	  fi \
+	done

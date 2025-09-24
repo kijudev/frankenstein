@@ -4,16 +4,15 @@
 
 #pragma once
 
-#include "./TypeTraits.hpp"
+#include "TypeTraits.hpp"
 #include <type_traits>
 #include <utility>
 
-namespace core {
-
+namespace frank {
+namespace utils {
 template <typename Callback>
-concept ScopeGuardCallback
-    = core_type::NoArgCallable<Callback> && core_type::ReturnsVoid<Callback>
-      && core_type::NothrowDestructible<Callback>;
+concept ScopeGuardCallback = NoArgCallable<Callback> && ReturnsVoid<Callback>
+                             && NothrowDestructible<Callback>;
 
 template <ScopeGuardCallback Callback>
 class ScopeGuard {
@@ -45,5 +44,5 @@ public:
 
     void dismiss() noexcept { m_active = false; }
 };
-
-} // namespace core
+}
+}

@@ -1,10 +1,10 @@
 #include <cstddef>
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "../core/DynamicArray.hpp"
+#include "../include/containers/DynamicArray.hpp"
 #include "doctest/doctest.h"
 
 TEST_CASE("Testing push_back") {
-    core::DynamicArray<int> ns;
+    frank::containers::DynamicArray<int> ns;
 
     for (size_t i = 0; i < 1000; ++i) {
         ns.push_back(i);

@@ -2,8 +2,6 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
-#include "ScopeGuard.hpp"
-#include "TypeTraits.hpp"
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -16,7 +14,10 @@
 #include <stdexcept>
 #include <type_traits>
 
-namespace core {
+#include "../utils/ScopeGuard.hpp"
+
+namespace frank {
+namespace containers {
 template <typename T, typename Allocator = std::allocator<T>>
 class DynamicArray {
     // =========================================================================
@@ -249,7 +250,7 @@ public:
     }
 
     [[nodiscard]] inline constexpr size_type max_size() const noexcept {
-        if constexpr (core_type::HasMaxSize<Allocator>) {
+        if constexpr (utils::HasMaxSize<Allocator>) {
             return AT::max_size();
         } else {
             return std::numeric_limits<size_type>::max();
@@ -400,7 +401,7 @@ public:
                     impl_construct_item(new_last, item);
                 }
             } else {
-                ScopeGuard guard([&]() {
+                utils::ScopeGuard guard([&]() {
                     impl_destroy_range(new_first, new_last);
                     impl_deallocate(new_first, new_capacity);
                 });
@@ -432,7 +433,8 @@ public:
                 impl_construct_item(m_last, item);
             }
         } else {
-            ScopeGuard guard([&]() { impl_destroy_range(m_first, m_last); });
+            utils::ScopeGuard guard(
+                [&]() { impl_destroy_range(m_first, m_last); });
 
             for (; m_last != m_first + count; ++m_last) {
                 impl_construct_item(m_last, item);
@@ -460,7 +462,7 @@ public:
             if constexpr (std::is_nothrow_copy_constructible_v<T>) {
                 impl_copy_range_iterator<It>(first, last, new_first);
             } else {
-                ScopeGuard guard(
+                utils::ScopeGuard guard(
                     [&]() { impl_deallocate(new_first, new_last); });
 
                 impl_copy_range_iterator<It>(first, last, new_first);
@@ -550,7 +552,7 @@ public:
         if constexpr (std::is_nothrow_copy_constructible_v<T>) {
             impl_move_range_raw(m_first, m_last, new_first);
         } else {
-            ScopeGuard guard(
+            utils::ScopeGuard guard(
                 [&]() { impl_deallocate(new_first, new_capacity); });
 
             impl_move_range_raw(m_first, m_last, new_first);
@@ -588,7 +590,7 @@ public:
         if constexpr (std::is_nothrow_copy_constructible_v<T>) {
             impl_move_range_raw(m_first, m_first + sz, new_first);
         } else {
-            ScopeGuard guard(
+            utils::ScopeGuard guard(
                 [&]() { impl_deallocate(new_first, new_capacity); });
 
             impl_move_range_raw(m_first, m_first + sz, new_first);
@@ -624,7 +626,7 @@ public:
         if constexpr (std::is_nothrow_copy_constructible_v<T>) {
             impl_move_range_raw(m_first, m_first + size(), new_first);
         } else {
-            ScopeGuard guard(
+            utils::ScopeGuard guard(
                 [&]() { impl_deallocate(new_first, new_capacity); });
 
             impl_move_range_raw(m_first, m_first + size(), new_first);
@@ -679,8 +681,6 @@ private:
         }
     }
 
-    void impl_fill(pointer first, pointer last, size_type count) { }
-
     void impl_move_segment_down(
         pointer   first,
         pointer   last,
@@ -713,35 +713,6 @@ private:
     impl_destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
         if constexpr (!std::is_trivially_destructible_v<T>) {
             AT::destroy(m_allocator, p);
-        }
-    }
-
-    void impl_fill_uninitialized(pointer first, pointer last) noexcept(
-        std::is_nothrow_default_constructible_v<T>
-        || std::is_trivially_default_constructible_v<T>) {
-        if constexpr (std::is_trivially_default_constructible_v<T>) {
-            std::memset(first, 0, std::distance(first, last) * sizeof(T));
-        } else {
-            if constexpr (
-                std::is_nothrow_default_constructible_v<T>
-                || std::is_trivially_destructible_v<T>) {
-                for (; first != last; ++first) {
-                    AT::construct(m_allocator, first);
-                }
-            } else {
-                pointer    current = first;
-                ScopeGuard guard([&]() {
-                    for (pointer p = first; p != current; ++p) {
-                        AT::destroy(m_allocator, p);
-                    }
-                });
-
-                for (; current != last; ++current) {
-                    AT::construct(m_allocator, current);
-                }
-
-                guard.dismiss();
-            }
         }
     }
 
@@ -824,4 +795,5 @@ private:
         std::swap(m_capacity, other.m_capacity);
     }
 };
+}
 }
