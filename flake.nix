@@ -30,7 +30,7 @@
               clang-tools
               cppcheck
               bear
-              catch2_3
+              doctest
             ];
 
             shellHook = ''
