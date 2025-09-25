@@ -1,5 +1,5 @@
 CXX      := clang++
-CXXOPT   := -O0 -g
+CXXOPT   := -O1 -g
 CXXFLAGS := -std=c++23 -Wall -Wextra -Iinclude 
 
 BOLD     := \033[1m
@@ -28,7 +28,7 @@ bin/%: apps/%/main.cpp
 
 bin/tests/%: tests/%.cpp
 	mkdir -p bin/tests
-	$(CXX) $(CXXFLAGS) -O3 -g $< -o $@
+	$(CXX) $(CXXFLAGS) $(CXXOPT) $< -o $@
 
 clean:
 	rm -rf bin

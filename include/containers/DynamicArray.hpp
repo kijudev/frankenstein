@@ -17,7 +17,6 @@
 #include "../utils/ScopeGuard.hpp"
 
 namespace frank {
-namespace containers {
 template <typename T, typename Allocator = std::allocator<T>>
 class DynamicArray {
     // =========================================================================
@@ -74,7 +73,7 @@ public:
     DynamicArray(const DynamicArray& other)
         : DynamicArray(
               other,
-              AT::select_on_copy_container_construction(other.m_allocator)) { }
+              AT::select_on_container_copy_construction(other.m_allocator)) { }
 
     DynamicArray(const DynamicArray& other, const Allocator& a)
         : m_allocator(a) {
@@ -783,10 +782,7 @@ private:
     }
 
     inline size_type impl_calc_growth() noexcept {
-        return capacity() == 0 ?
-                   2 :
-                   (capacity() * sizeof(T) <= 0x1000 ? capacity() * 2 :
-                                                       capacity() * 3 / 2);
+        return capacity() == 0 ? 1 : capacity() * 2;
     }
 
     inline void impl_swap(DynamicArray& other) noexcept {
@@ -795,5 +791,4 @@ private:
         std::swap(m_capacity, other.m_capacity);
     }
 };
-}
 }
