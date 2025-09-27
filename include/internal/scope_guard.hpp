@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include "TypeTraits.hpp"
+#include "type_traits.hpp"
 #include <type_traits>
 #include <utility>
 
 namespace frank {
-namespace utils {
+namespace internal {
 template <typename Callback>
 concept ScopeGuardCallback = NoArgCallable<Callback> && ReturnsVoid<Callback>
                              && NothrowDestructible<Callback>;

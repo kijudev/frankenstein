@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
-#include "containers/DynamicArray.hpp"
+#include "container/DynamicArray.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>

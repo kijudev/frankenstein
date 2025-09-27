@@ -10,7 +10,7 @@
 #include <utility>
 
 namespace frank {
-namespace utils {
+namespace internal {
 template <typename T>
 concept NoArgCallable = requires(T&& t) {
     { t() };

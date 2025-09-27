@@ -2,8 +2,7 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
-#include "utils/ScopeGuard.hpp"
-#include "utils/TypeTraits.hpp"
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <iterator>
@@ -13,6 +12,11 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+
+#include "../internal/scope_guard.hpp"
+#include "../internal/type_traits.hpp"
+#include "../macro/assert.hpp"
+#include "../macro/noexcept.hpp"
 
 namespace frank {
 template <typename T, typename Allocator = std::allocator<T>>
@@ -49,21 +53,21 @@ private:
         // Points at the end of the memory block
         pointer capacity {nullptr};
 
-        ~Impl() noexcept(std::is_nothrow_destructible_v<T>) {
+        ~Impl() FRANK_NOEXCEPT(std::is_nothrow_destructible_v<T>) {
             if (!is_null()) {
                 destroy_self();
                 deallocate_self();
             }
         };
 
-        Impl() noexcept(std::is_nothrow_constructible_v<Allocator>)
+        Impl() FRANK_NOEXCEPT(std::is_nothrow_constructible_v<Allocator>)
             : Allocator() { }
 
-        Impl(const Allocator& a) noexcept(
+        Impl(const Allocator& a) FRANK_NOEXCEPT(
             std::is_nothrow_constructible_v<Allocator, decltype(a)>)
             : Allocator(a) { };
 
-        Impl(Allocator&& a) noexcept
+        Impl(Allocator&& a) FRANK_NOEXCEPT
             : Allocator(std::move_if_noexcept(a)) { };
 
         Impl(const Impl& other) = delete;
@@ -72,35 +76,36 @@ private:
         Impl& operator=(const Impl& other) = delete;
         Impl& operator=(Impl&& other)      = delete;
 
-        inline bool is_null() noexcept { return first == nullptr; }
+        inline bool is_null() FRANK_NOEXCEPT { return first == nullptr; }
 
-        void swap(Impl& other) noexcept {
+        void swap(Impl& other) FRANK_NOEXCEPT {
             swap_data(other);
             swap_allocator(other);
         }
 
-        void swap_data(Impl& other) noexcept {
+        void swap_data(Impl& other) FRANK_NOEXCEPT {
             std::swap(first, other.first);
             std::swap(last, other.last);
             std::swap(capacity, other.capacity);
         }
 
-        void swap_allocator(Impl& other) noexcept {
+        void swap_allocator(Impl& other) FRANK_NOEXCEPT {
             std::swap(
                 static_cast<Allocator&>(*this), static_cast<Allocator&>(other));
         }
 
-        void set(pointer f, pointer l, pointer c) noexcept {
+        void set(pointer f, pointer l, pointer c) FRANK_NOEXCEPT {
             first    = f;
             last     = l;
             capacity = c;
         }
 
-        void reset(size_type sz) noexcept(std::is_nothrow_destructible_v<T>) {
+        void reset(size_type sz)
+            FRANK_NOEXCEPT(std::is_nothrow_destructible_v<T>) {
             destroy_self();
             deallocate_self();
 
-            utils::ScopeGuard rollback([&]() { init_self_null(); });
+            internal::ScopeGuard rollback([&]() { init_self_null(); });
             init_self(sz);
             rollback.dismiss();
         }
@@ -117,30 +122,30 @@ private:
             std::advance(capacity, sz);
         }
 
-        void init_self_null() noexcept {
+        void init_self_null() FRANK_NOEXCEPT {
             first    = nullptr;
             last     = nullptr;
             capacity = nullptr;
         }
 
-        void deallocate_self() noexcept {
+        void deallocate_self() FRANK_NOEXCEPT {
             std::allocator_traits<Allocator>::deallocate(
                 *this, first, std::distance(first, capacity));
         }
 
         template <typename... Args>
-        void construct_item(pointer p, Args&&... args) noexcept(
-            std::is_nothrow_constructible_v<T, Args...>) {
+        void construct_item(pointer p, Args&&... args)
+            FRANK_NOEXCEPT(std::is_nothrow_constructible_v<T, Args...>) {
             std::allocator_traits<Allocator>::construct(
                 *this, p, std::forward<Args>(args)...);
         }
 
-        void destroy_self() noexcept(std::is_nothrow_destructible_v<T>) {
+        void destroy_self() FRANK_NOEXCEPT(std::is_nothrow_destructible_v<T>) {
             destroy_range(first, last);
         }
 
-        void destroy_range(pointer a, pointer b) noexcept(
-            std::is_nothrow_destructible_v<T>) {
+        void destroy_range(pointer a, pointer b)
+            FRANK_NOEXCEPT(std::is_nothrow_destructible_v<T>) {
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 for (; a != b; ++a) {
                     std::allocator_traits<Allocator>::destroy(*this, a);
@@ -148,8 +153,8 @@ private:
             }
         }
 
-        void
-        destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
+        void destroy_item(pointer p)
+            FRANK_NOEXCEPT(std::is_nothrow_destructible_v<T>) {
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 std::allocator_traits<Allocator>::destroy(*this, p);
             }
@@ -167,125 +172,131 @@ private:
 public:
     ~DynamicArray() = default;
 
-    DynamicArray() noexcept
-        : impl() { }
+    DynamicArray() FRANK_NOEXCEPT : impl() { }
 
-    explicit DynamicArray(const Allocator& a) noexcept(
-        std::is_nothrow_constructible_v<Impl, decltype(a)>)
+    explicit DynamicArray(const Allocator& a)
+        FRANK_NOEXCEPT(std::is_nothrow_constructible_v<Impl, decltype(a)>)
         : impl(a) { }
 
 public:
-    iterator       begin() noexcept { return std::to_address(impl.first); }
-    const_iterator begin() const noexcept {
+    iterator begin() FRANK_NOEXCEPT { return std::to_address(impl.first); }
+    const_iterator begin() const FRANK_NOEXCEPT {
         return std::to_address(impl.first);
     }
 
-    iterator       end() noexcept { return std::to_address(impl.last); }
-    const_iterator end() const noexcept { return std::to_address(impl.last); }
+    iterator       end() FRANK_NOEXCEPT { return std::to_address(impl.last); }
+    const_iterator end() const FRANK_NOEXCEPT {
+        return std::to_address(impl.last);
+    }
 
-    reverse_iterator       rbegin() noexcept { return reverse_iterator(end()); }
-    const_reverse_iterator rbegin() const noexcept {
+    reverse_iterator rbegin() FRANK_NOEXCEPT { return reverse_iterator(end()); }
+    const_reverse_iterator rbegin() const FRANK_NOEXCEPT {
         return const_reverse_iterator(end());
     }
 
-    reverse_iterator       rend() noexcept { return reverse_iterator(begin()); }
-    const_reverse_iterator rend() const noexcept {
+    reverse_iterator rend() FRANK_NOEXCEPT { return reverse_iterator(begin()); }
+    const_reverse_iterator rend() const FRANK_NOEXCEPT {
         return const_reverse_iterator(begin());
     }
 
-    const_iterator cbegin() const noexcept {
+    const_iterator cbegin() const FRANK_NOEXCEPT {
         return std::to_address(impl.first);
     }
-    const_iterator cend() const noexcept { return std::to_address(impl.last); }
+    const_iterator cend() const FRANK_NOEXCEPT {
+        return std::to_address(impl.last);
+    }
 
-    const_reverse_iterator crbegin() const noexcept {
+    const_reverse_iterator crbegin() const FRANK_NOEXCEPT {
         return const_reverse_iterator(end());
     }
-    const_reverse_iterator crend() const noexcept {
+    const_reverse_iterator crend() const FRANK_NOEXCEPT {
         return const_reverse_iterator(begin());
     }
 
-    reference operator[](size_type idx) noexcept { return impl.first[idx]; }
-    const_reference operator[](size_type idx) const noexcept {
+    reference operator[](size_type idx) FRANK_NOEXCEPT {
+        return impl.first[idx];
+    }
+    const_reference operator[](size_type idx) const FRANK_NOEXCEPT {
         return impl.first[idx];
     }
 
-    [[nodiscard]] std::optional<reference> at(size_type idx) noexcept {
+    [[nodiscard]] std::optional<reference> at(size_type idx) FRANK_NOEXCEPT {
         return is_idx_valid(idx) ? std::optional<reference>(impl.first[idx]) :
                                    std::nullopt;
     }
 
     [[nodiscard]] std::optional<const_reference>
-    at(size_type idx) const noexcept {
+    at(size_type idx) const FRANK_NOEXCEPT {
         return is_idx_valid(idx) ?
                    std::optional<const_reference>(impl.first[idx]) :
                    std::nullopt;
     }
 
-    [[nodiscard]] std::optional<reference> front() noexcept {
-        return impl.is_null() ? std::nullopt :
-                                std::optional<reference>(*impl.first);
+    [[nodiscard]] std::optional<reference> front() FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt : std::optional<reference>(*impl.first);
     }
 
-    [[nodiscard]] std::optional<const_reference> front() const noexcept {
-        return impl.is_null() ? std::nullopt :
-                                std::optional<const_reference>(*impl.first);
+    [[nodiscard]] std::optional<const_reference> front() const FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt :
+                           std::optional<const_reference>(*impl.first);
     }
 
-    reference       front_unsafe() noexcept { return *impl.first; }
-    const_reference front_unsafe() const noexcept { return *impl.first; }
+    reference       front_unsafe() FRANK_NOEXCEPT { return *impl.first; }
+    const_reference front_unsafe() const FRANK_NOEXCEPT { return *impl.first; }
 
-    [[nodiscard]] std::optional<reference> back() noexcept {
-        return impl.is_null() ? std::nullopt :
-                                std::optional<reference>(impl.last[-1]);
+    [[nodiscard]] std::optional<reference> back() FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt :
+                           std::optional<reference>(impl.last[-1]);
     }
 
-    [[nodiscard]] std::optional<const_reference> back() const noexcept {
-        return impl.is_null() ? std::nullopt :
-                                std::optional<const_reference>(impl.last[-1]);
+    [[nodiscard]] std::optional<const_reference> back() const FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt :
+                           std::optional<const_reference>(impl.last[-1]);
     }
 
-    reference       back_unsafe() noexcept { return impl.last[-1]; }
-    const_reference back_unsafe() const noexcept { return impl.last[-1]; }
+    reference       back_unsafe() FRANK_NOEXCEPT { return impl.last[-1]; }
+    const_reference back_unsafe() const FRANK_NOEXCEPT { return impl.last[-1]; }
 
-    [[nodiscard]] bool is_empty() const noexcept {
+    [[nodiscard]] bool is_null() const FRANK_NOEXCEPT { return impl.is_null(); }
+
+    [[nodiscard]] bool is_empty() const FRANK_NOEXCEPT {
         return impl.first == impl.last;
     }
 
-    [[nodiscard]] bool is_full() const noexcept {
+    [[nodiscard]] bool is_full() const FRANK_NOEXCEPT {
         return impl.last == impl.capacity;
     }
 
-    [[nodiscard]] size_type size() const noexcept {
+    [[nodiscard]] size_type size() const FRANK_NOEXCEPT {
         return std::distance(impl.first, impl.last);
     }
 
-    [[nodiscard]] size_type capacity() const noexcept {
+    [[nodiscard]] size_type capacity() const FRANK_NOEXCEPT {
         return std::distance(impl.first, impl.capacity);
     }
 
-    [[nodiscard]] constexpr size_type max_size() const noexcept {
-        if constexpr (utils::HasMaxSize<Allocator>) {
+    [[nodiscard]] constexpr size_type max_size() const FRANK_NOEXCEPT {
+        if constexpr (internal::HasMaxSize<Allocator>) {
             return std::allocator_traits<Allocator>::max_size();
         } else {
             return std::numeric_limits<size_type>::max();
         }
     }
 
-    [[nodiscard]] Allocator allocator() const noexcept {
+    [[nodiscard]] Allocator allocator() const FRANK_NOEXCEPT {
         return static_cast<Allocator>(impl);
     }
 
-    [[nodiscard]] std::optional<T*> data() noexcept {
-        return impl.is_null() ? std::nullopt : std::to_address(impl.first);
+    [[nodiscard]] std::optional<T*> data() FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt : std::to_address(impl.first);
     }
 
-    [[nodiscard]] std::optional<const T*> data() const noexcept {
-        return impl.is_null() ? std::nullopt : std::to_address(impl.first);
+    [[nodiscard]] std::optional<const T*> data() const FRANK_NOEXCEPT {
+        return is_null() ? std::nullopt : std::to_address(impl.first);
     }
 
-    T*       data_unsafe() noexcept { return std::to_address(impl.first); }
-    const T* data_unsafe() const noexcept {
+    T* data_unsafe() FRANK_NOEXCEPT { return std::to_address(impl.first); }
+    const T* data_unsafe() const FRANK_NOEXCEPT {
         return std::to_address(impl.first);
     }
 
@@ -304,15 +315,15 @@ public:
 
     void push_back(T&& item) { emplace_back(std::move(item)); }
 
-    void grow(size_type sz) { }
+    void grow(size_type sz) { assert(sz > 0); }
 
     void shrink_to_fit() { }
 
     void shrink(size_type sz) { }
 
 private:
-    void copy_range(pointer a, pointer b, pointer dest) noexcept(
-        std::is_nothrow_copy_constructible_v<T>) {
+    void copy_range(pointer a, pointer b, pointer dest)
+        FRANK_NOEXCEPT(std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
@@ -323,8 +334,8 @@ private:
         }
     }
 
-    void move_range(pointer a, pointer b, pointer dest) noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    void move_range(pointer a, pointer b, pointer dest)
+        FRANK_NOEXCEPT(std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
@@ -335,16 +346,17 @@ private:
         }
     }
 
-    [[nodiscard]] inline bool is_iterator_valid(const_iterator i) noexcept {
+    [[nodiscard]] inline bool
+    is_iterator_valid(const_iterator i) FRANK_NOEXCEPT {
         return (std::to_address(i) >= std::to_address(impl.first))
                && (std::to_address(i) <= std::to_address(impl.last));
     }
 
-    [[nodiscard]] inline bool is_idx_valid(size_type idx) noexcept {
+    [[nodiscard]] inline bool is_idx_valid(size_type idx) FRANK_NOEXCEPT {
         return idx < size();
     }
 
-    [[nodiscard]] inline size_type calc_next_capacity() noexcept {
+    [[nodiscard]] inline size_type calc_next_capacity() FRANK_NOEXCEPT {
         return is_empty() ? 1 : capacity() * 2;
     }
 };
