@@ -3,9 +3,11 @@
 // See LICENSE.md file in the project root for full license information.
 
 #include "utils/ScopeGuard.hpp"
+#include "utils/TypeTraits.hpp"
 #include <cstddef>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <new>
 #include <optional>
@@ -173,53 +175,118 @@ public:
         : impl(a) { }
 
 public:
+    iterator       begin() noexcept { return std::to_address(impl.first); }
+    const_iterator begin() const noexcept {
+        return std::to_address(impl.first);
+    }
+
+    iterator       end() noexcept { return std::to_address(impl.last); }
+    const_iterator end() const noexcept { return std::to_address(impl.last); }
+
+    reverse_iterator       rbegin() noexcept { return reverse_iterator(end()); }
+    const_reverse_iterator rbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+
+    reverse_iterator       rend() noexcept { return reverse_iterator(begin()); }
+    const_reverse_iterator rend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+
+    const_iterator cbegin() const noexcept {
+        return std::to_address(impl.first);
+    }
+    const_iterator cend() const noexcept { return std::to_address(impl.last); }
+
+    const_reverse_iterator crbegin() const noexcept {
+        return const_reverse_iterator(end());
+    }
+    const_reverse_iterator crend() const noexcept {
+        return const_reverse_iterator(begin());
+    }
+
     reference operator[](size_type idx) noexcept { return impl.first[idx]; }
     const_reference operator[](size_type idx) const noexcept {
         return impl.first[idx];
     }
 
-    std::optional<reference> at(size_type idx) noexcept {
+    [[nodiscard]] std::optional<reference> at(size_type idx) noexcept {
         return is_idx_valid(idx) ? std::optional<reference>(impl.first[idx]) :
                                    std::nullopt;
     }
 
-    std::optional<const_reference> at(size_type idx) const noexcept {
+    [[nodiscard]] std::optional<const_reference>
+    at(size_type idx) const noexcept {
         return is_idx_valid(idx) ?
                    std::optional<const_reference>(impl.first[idx]) :
                    std::nullopt;
     }
 
-    std::optional<reference> front() noexcept {
+    [[nodiscard]] std::optional<reference> front() noexcept {
         return impl.is_null() ? std::nullopt :
                                 std::optional<reference>(*impl.first);
     }
 
-    std::optional<const_reference> front() const noexcept {
+    [[nodiscard]] std::optional<const_reference> front() const noexcept {
         return impl.is_null() ? std::nullopt :
                                 std::optional<const_reference>(*impl.first);
     }
 
-    std::optional<reference> back() noexcept {
+    reference       front_unsafe() noexcept { return *impl.first; }
+    const_reference front_unsafe() const noexcept { return *impl.first; }
+
+    [[nodiscard]] std::optional<reference> back() noexcept {
         return impl.is_null() ? std::nullopt :
                                 std::optional<reference>(impl.last[-1]);
     }
 
-    std::optional<const_reference> back() const noexcept {
+    [[nodiscard]] std::optional<const_reference> back() const noexcept {
         return impl.is_null() ? std::nullopt :
                                 std::optional<const_reference>(impl.last[-1]);
     }
 
-public:
-    [[nodiscard]] bool is_empty() noexcept { return impl.first == impl.last; }
+    reference       back_unsafe() noexcept { return impl.last[-1]; }
+    const_reference back_unsafe() const noexcept { return impl.last[-1]; }
 
-    [[nodiscard]] bool is_full() noexcept { return impl.last == impl.capacity; }
+    [[nodiscard]] bool is_empty() const noexcept {
+        return impl.first == impl.last;
+    }
 
-    [[nodiscard]] size_type size() noexcept {
+    [[nodiscard]] bool is_full() const noexcept {
+        return impl.last == impl.capacity;
+    }
+
+    [[nodiscard]] size_type size() const noexcept {
         return std::distance(impl.first, impl.last);
     }
 
-    [[nodiscard]] size_type capacity() noexcept {
+    [[nodiscard]] size_type capacity() const noexcept {
         return std::distance(impl.first, impl.capacity);
+    }
+
+    [[nodiscard]] constexpr size_type max_size() const noexcept {
+        if constexpr (utils::HasMaxSize<Allocator>) {
+            return std::allocator_traits<Allocator>::max_size();
+        } else {
+            return std::numeric_limits<size_type>::max();
+        }
+    }
+
+    [[nodiscard]] Allocator allocator() const noexcept {
+        return static_cast<Allocator>(impl);
+    }
+
+    [[nodiscard]] std::optional<T*> data() noexcept {
+        return impl.is_null() ? std::nullopt : std::to_address(impl.first);
+    }
+
+    [[nodiscard]] std::optional<const T*> data() const noexcept {
+        return impl.is_null() ? std::nullopt : std::to_address(impl.first);
+    }
+
+    T*       data_unsafe() noexcept { return std::to_address(impl.first); }
+    const T* data_unsafe() const noexcept {
+        return std::to_address(impl.first);
     }
 
 public:
