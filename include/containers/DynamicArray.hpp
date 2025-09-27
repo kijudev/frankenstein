@@ -59,10 +59,10 @@ private:
 
         Impl(const Allocator& a) noexcept(
             std::is_nothrow_constructible_v<Allocator, decltype(a)>)
-            : Allocator(a) {};
+            : Allocator(a) { };
 
         Impl(Allocator&& a) noexcept
-            : Allocator(std::move_if_noexcept(a)) {};
+            : Allocator(std::move_if_noexcept(a)) { };
 
         Impl(const Impl& other) = delete;
         Impl(Impl&& other)      = delete;
@@ -173,8 +173,41 @@ public:
         : impl(a) { }
 
 public:
-    reference       operator[](size_type idx) { return impl.first[idx]; }
-    const_reference operator[](size_type idx) const { return impl.first[idx]; }
+    reference operator[](size_type idx) noexcept { return impl.first[idx]; }
+    const_reference operator[](size_type idx) const noexcept {
+        return impl.first[idx];
+    }
+
+    std::optional<reference> at(size_type idx) noexcept {
+        return is_idx_valid(idx) ? std::optional<reference>(impl.first[idx]) :
+                                   std::nullopt;
+    }
+
+    std::optional<const_reference> at(size_type idx) const noexcept {
+        return is_idx_valid(idx) ?
+                   std::optional<const_reference>(impl.first[idx]) :
+                   std::nullopt;
+    }
+
+    std::optional<reference> front() noexcept {
+        return impl.is_null() ? std::nullopt :
+                                std::optional<reference>(*impl.first);
+    }
+
+    std::optional<const_reference> front() const noexcept {
+        return impl.is_null() ? std::nullopt :
+                                std::optional<const_reference>(*impl.first);
+    }
+
+    std::optional<reference> back() noexcept {
+        return impl.is_null() ? std::nullopt :
+                                std::optional<reference>(impl.last[-1]);
+    }
+
+    std::optional<const_reference> back() const noexcept {
+        return impl.is_null() ? std::nullopt :
+                                std::optional<const_reference>(impl.last[-1]);
+    }
 
 public:
     [[nodiscard]] bool is_empty() noexcept { return impl.first == impl.last; }
@@ -191,7 +224,7 @@ public:
 
 public:
     template <typename... Args>
-    void emplace(Args&&... args) {
+    void emplace_back(Args&&... args) {
         if (is_full()) {
             grow(calc_next_capacity());
         }
@@ -200,7 +233,9 @@ public:
         impl.advance();
     }
 
-    void push_back() { }
+    void push_back(const T& item) { emplace_back(item); }
+
+    void push_back(T&& item) { emplace_back(std::move(item)); }
 
     void grow(size_type sz) { }
 
@@ -231,6 +266,15 @@ private:
         } else {
             std::uninitialized_move(a, b, dest);
         }
+    }
+
+    [[nodiscard]] inline bool is_iterator_valid(const_iterator i) noexcept {
+        return (std::to_address(i) >= std::to_address(impl.first))
+               && (std::to_address(i) <= std::to_address(impl.last));
+    }
+
+    [[nodiscard]] inline bool is_idx_valid(size_type idx) noexcept {
+        return idx < size();
     }
 
     [[nodiscard]] inline size_type calc_next_capacity() noexcept {
