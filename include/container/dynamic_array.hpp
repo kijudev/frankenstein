@@ -315,11 +315,47 @@ public:
 
     void push_back(T&& item) { emplace_back(std::move(item)); }
 
-    void grow(size_type sz) { assert(sz > 0); }
+    void pop_back() FRANK_NOEXCEPT(FRANK_NOEXCEPT(impl.destroy_item)) { }
 
-    void shrink_to_fit() { }
+    void reserve(size_type sz) {
+        FRANK_ASSERT(sz > size());
+        if (sz <= capacity()) {
+            return;
+        }
 
-    void shrink(size_type sz) { }
+        grow(sz);
+    }
+
+    void grow(size_type sz) {
+        FRANK_ASSERT(sz > capacity());
+
+        Impl new_impl(impl);
+        new_impl.init_self(sz);
+
+        if (is_null()) [[unlikely]] {
+            impl.swap_data(new_impl);
+            return;
+        }
+
+        move_range(impl.first, impl.last, new_impl.first);
+        impl.swap_data(new_impl);
+        new_impl.deallocate_self();
+    }
+
+    void shrink_to_fit() { shrink(size()); }
+
+    void shrink(size_type sz) {
+        FRANK_ASSERT(sz < capacity());
+        FRANK_ASSERT(sz >= size());
+
+        Impl new_impl(impl);
+        new_impl.init_self(sz);
+
+        move_range(impl.first, impl.last, new_impl.first);
+
+        impl.swap(new_impl);
+        new_impl.deallocate_self();
+    }
 
 private:
     void copy_range(pointer a, pointer b, pointer dest)
