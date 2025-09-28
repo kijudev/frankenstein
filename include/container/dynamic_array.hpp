@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
@@ -161,11 +162,32 @@ private:
             }
         }
 
-        inline void advance() { std::advance(last, 1); }
-        inline void advance_by(size_type n) { std::advance(last, n); }
+        void move_range_right(pointer a, pointer b, size_type n)
+            FRANK_NOEXCEPT(std::is_nothrow_move_constructible_v<T>) {
+            if constexpr (std::is_trivially_move_constructible_v<T>) {
+                std::memmove(
+                    static_cast<void*>(a + n),
+                    static_cast<void*>(a),
+                    std::distance(a, b) * sizeof(T));
+            } else {
+                std::move_backward(a, b, b + n);
+            }
+        }
 
-        inline void prev() { last = std::prev(last, 1); }
-        inline void prev_by(size_type n) { last = std::prev(last, n); }
+        void move_range_left(pointer a, pointer b, size_type n)
+            FRANK_NOEXCEPT(std::is_nothrow_move_constructible_v<T>) {
+            if constexpr (std::is_trivially_move_constructible_v<T>) {
+                std::memmove(
+                    static_cast<void*>(a - n),
+                    static_cast<void*>(a),
+                    std::distance(a, b) * sizeof(T));
+            } else {
+                std::move(a, b, a - n);
+            }
+        }
+        inline void advance(size_type n) { std::advance(last, n); }
+
+        inline void prev(size_type n) { last = std::prev(last, n); }
     };
 
     Impl impl;
@@ -337,6 +359,10 @@ public:
     }
 
 public:
+    void push_back(const T& item) { emplace_back(item); }
+
+    void push_back(T&& item) { emplace_back(std::move(item)); }
+
     template <typename... Args>
     void emplace_back(Args&&... args) {
         if (is_full()) {
@@ -344,18 +370,56 @@ public:
         }
 
         impl.construct_item(impl.last, std::forward<Args>(args)...);
-        impl.advance();
+        impl.advance(1);
     }
-
-    void push_back(const T& item) { emplace_back(item); }
-
-    void push_back(T&& item) { emplace_back(std::move(item)); }
 
     void pop_back() FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(Impl, destroy_item)) {
         FRANK_ASSERT(!is_empty());
 
-        impl.prev();
+        impl.prev(1);
         impl.destroy_item(impl.last);
+    }
+
+    void insert(size_type idx, const T& item)
+        FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(DynamicArray, emplace)) {
+        emplace(idx, item);
+    }
+
+    void insert(size_type idx, T&& item)
+        FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(DynamicArray, emplace)) {
+        emplace(idx, std::move(item));
+    }
+
+    template <typename... Args>
+    void emplace(size_type idx, Args&&... args) FRANK_NOEXCEPT(
+        FRANK_NOEXCEPT_METHOD(Impl, move_range_right)
+        && FRANK_NOEXCEPT_METHOD(Impl, construct_item)) {
+        FRANK_ASSERT(is_idx_valid(idx));
+
+        impl.move_range_right(impl.first + idx + 1, impl.last, 1);
+        impl.construct_item(impl.first + idx, std::forward<Args>(args)...);
+        impl.advance(1);
+    }
+
+    void erase(size_type idx) FRANK_NOEXCEPT(
+        FRANK_NOEXCEPT_METHOD(Impl, destroy_item)
+        && FRANK_NOEXCEPT_METHOD(Impl, move_range_left)) {
+        FRANK_ASSERT(is_idx_valid(idx));
+
+        if (idx == size() - 1) {
+            pop_back();
+            return;
+        }
+
+        impl.destroy_item(impl.first + idx);
+        impl.move_range_left(impl.first + idx + 1, impl.last, 1);
+        impl.prev(1);
+    }
+
+    void clear(size_type idx)
+        FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(Impl, destroy_self)) {
+        impl.destroy_self();
+        impl.last = impl.first;
     }
 
     void reserve(size_type sz) {
@@ -379,7 +443,7 @@ public:
         }
 
         move_range(impl.first, impl.last, new_impl.first);
-        new_impl.advance_by(size());
+        new_impl.advance(size());
 
         impl.swap_data(new_impl);
         new_impl.last = new_impl.first;
