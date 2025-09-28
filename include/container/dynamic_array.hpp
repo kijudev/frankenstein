@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -163,8 +164,8 @@ private:
         inline void advance() { std::advance(last, 1); }
         inline void advance_by(size_type n) { std::advance(last, n); }
 
-        inline void prev() { std::prev(last, 1); }
-        inline void prev_by(size_type n) { std::prev(last, n); }
+        inline void prev() { last = std::prev(last, 1); }
+        inline void prev_by(size_type n) { last = std::prev(last, n); }
     };
 
     Impl impl;
@@ -204,7 +205,7 @@ public:
 
     DynamicArray& operator=(DynamicArray other) {
         if constexpr (std::allocator_traits<
-                          T>::propagate_on_container_copy_assignment) {
+                          Allocator>::propagate_on_container_copy_assignment) {
             impl.swap(other.impl);
         } else {
             impl.swap_data(other.impl);
@@ -379,7 +380,9 @@ public:
 
         move_range(impl.first, impl.last, new_impl.first);
         new_impl.advance_by(size());
+
         impl.swap_data(new_impl);
+        new_impl.last = new_impl.first;
     }
 
     void shrink_to_fit() { shrink(size()); }
@@ -394,6 +397,7 @@ public:
         move_range(impl.first, impl.last, new_impl.first);
 
         impl.swap(new_impl);
+        new_impl.last = new_impl.first;
     }
 
 private:
@@ -403,7 +407,7 @@ private:
             std::memcpy(
                 static_cast<void*>(dest),
                 static_cast<void*>(a),
-                std::distance(a, b));
+                std::distance(a, b) * sizeof(T));
         } else {
             std::uninitialized_copy(a, b, dest);
         }
@@ -415,7 +419,7 @@ private:
             std::memcpy(
                 static_cast<void*>(dest),
                 static_cast<void*>(a),
-                std::distance(a, b));
+                std::distance(a, b) * sizeof(T));
         } else {
             std::uninitialized_move(a, b, dest);
         }
