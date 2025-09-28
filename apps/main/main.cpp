@@ -2,13 +2,20 @@
 // Licensed under the MIT License.
 // See LICENSE.md file in the project root for full license information.
 
-#include "container/DynamicArray.hpp"
+#include "../../include/container/dynamic_array.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <vector>
 
 int main() {
-    frank::DynamicArrayOld ns = {1, 2, 3, 4};
-    std::cout << sizeof(ns) << "\n";
+    frank::DynamicArray<int> ns;
+
+    ns.push_back(69);
+    ns.push_back(42);
+    ns.push_back(2137);
+
+    for (size_t i = 0; i < ns.size(); ++i) {
+        std::cout << ns[i] << "\n";
+    }
 }

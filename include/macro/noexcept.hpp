@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #ifdef FRANK_DISABLE_NOEXCEPT
 #define FRANK_NOEXCEPT
 #else
@@ -7,29 +9,8 @@
 #endif
 
 #ifdef FRANK_DISABLE_NOEXCEPT
-#define FRANK_NOEXCEPT_METHODS
+#define FRANK_NOEXCEPT_METHOD
 #else
-#define FRANK_NOEXCEPT_METHODS(Class, ...) (INTERNAL_NOEXCEPT_METHODS_)
+#define FRANK_NOEXCEPT_METHOD(ClassType, MethodType)                           \
+    noexcept(std::declval<ClassType>().MethodType())
 #endif
-
-#define FRANK_METHOD_NOEXCEPT(ClassType, MethodName)                           \
-    noexcept(std::declval<ClassType>().MethodName())
-
-// Variadic macro: ANDs all the method noexcepts together
-#define FRANK_NOEXCEPT_ALL(ClassType, ...)                                     \
-    (FRANK_NOEXCEPT_ALL_IMPL(ClassType, __VA_ARGS__))
-
-// Internal helpers
-#define FRANK_NOEXCEPT_ALL_IMPL(ClassType, ...)                                \
-    FRANK_NOEXCEPT_ALL_EXPAND(ClassType, __VA_ARGS__)
-
-#define FRANK_NOEXCEPT_ALL_EXPAND(ClassType, m1, ...)                          \
-    FRANK_METHOD_NOEXCEPT(ClassType, m1)                                       \
-    &&FRANK_NOEXCEPT_ALL_NEXT(ClassType, __VA_ARGS__)
-
-#define FRANK_NOEXCEPT_ALL_NEXT(ClassType, m1, ...)                            \
-    FRANK_METHOD_NOEXCEPT(ClassType, m1)                                       \
-    &&FRANK_NOEXCEPT_ALL_NEXT2(ClassType, __VA_ARGS__)
-
-#define FRANK_NOEXCEPT_ALL_NEXT2(ClassType, m1)                                \
-    FRANK_METHOD_NOEXCEPT(ClassType, m1)

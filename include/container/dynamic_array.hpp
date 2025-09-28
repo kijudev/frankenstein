@@ -76,7 +76,7 @@ private:
         Impl& operator=(const Impl& other) = delete;
         Impl& operator=(Impl&& other)      = delete;
 
-        inline bool is_null() FRANK_NOEXCEPT { return first == nullptr; }
+        inline bool is_null() const FRANK_NOEXCEPT { return first == nullptr; }
 
         void swap(Impl& other) FRANK_NOEXCEPT {
             swap_data(other);
@@ -177,6 +177,41 @@ public:
     explicit DynamicArray(const Allocator& a)
         FRANK_NOEXCEPT(std::is_nothrow_constructible_v<Impl, decltype(a)>)
         : impl(a) { }
+
+    explicit DynamicArray(size_type sz, const Allocator& a = Allocator())
+        : impl(a) {
+        grow(sz);
+    }
+
+    DynamicArray(const DynamicArray& other)
+        : DynamicArray(
+              other,
+              std::allocator_traits<T>::select_on_container_copy_construction(
+                  static_cast<Allocator>(other.impl))) { }
+
+    DynamicArray(const DynamicArray& other, const Allocator& a)
+        : impl(a) {
+        grow(other.size());
+        copy_range(other.impl.first, other.impl.last, impl.first);
+    }
+
+    DynamicArray(DynamicArray&& other) FRANK_NOEXCEPT { impl.swap(other.impl); }
+
+    DynamicArray(DynamicArray&& other, const Allocator& a) FRANK_NOEXCEPT
+        : impl(a) {
+        impl.swap_data(other.impl);
+    }
+
+    DynamicArray& operator=(DynamicArray other) {
+        if constexpr (std::allocator_traits<
+                          T>::propagate_on_container_copy_assignment) {
+            impl.swap(other.impl);
+        } else {
+            impl.swap_data(other.impl);
+        }
+
+        return *this;
+    }
 
 public:
     iterator begin() FRANK_NOEXCEPT { return std::to_address(impl.first); }
@@ -315,7 +350,12 @@ public:
 
     void push_back(T&& item) { emplace_back(std::move(item)); }
 
-    void pop_back() FRANK_NOEXCEPT(FRANK_NOEXCEPT(impl.destroy_item)) { }
+    void pop_back() FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(Impl, destroy_item)) {
+        FRANK_ASSERT(!is_empty());
+
+        impl.destroy_item(impl.last);
+        impl.prev();
+    }
 
     void reserve(size_type sz) {
         FRANK_ASSERT(sz > size());
@@ -329,7 +369,7 @@ public:
     void grow(size_type sz) {
         FRANK_ASSERT(sz > capacity());
 
-        Impl new_impl(impl);
+        Impl new_impl(static_cast<Allocator>(impl));
         new_impl.init_self(sz);
 
         if (is_null()) [[unlikely]] {
@@ -339,7 +379,6 @@ public:
 
         move_range(impl.first, impl.last, new_impl.first);
         impl.swap_data(new_impl);
-        new_impl.deallocate_self();
     }
 
     void shrink_to_fit() { shrink(size()); }
@@ -348,13 +387,12 @@ public:
         FRANK_ASSERT(sz < capacity());
         FRANK_ASSERT(sz >= size());
 
-        Impl new_impl(impl);
+        Impl new_impl(static_cast<Allocator>(impl));
         new_impl.init_self(sz);
 
         move_range(impl.first, impl.last, new_impl.first);
 
         impl.swap(new_impl);
-        new_impl.deallocate_self();
     }
 
 private:
