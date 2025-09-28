@@ -353,8 +353,8 @@ public:
     void pop_back() FRANK_NOEXCEPT(FRANK_NOEXCEPT_METHOD(Impl, destroy_item)) {
         FRANK_ASSERT(!is_empty());
 
-        impl.destroy_item(impl.last);
         impl.prev();
+        impl.destroy_item(impl.last);
     }
 
     void reserve(size_type sz) {
@@ -378,6 +378,7 @@ public:
         }
 
         move_range(impl.first, impl.last, new_impl.first);
+        new_impl.advance_by(size());
         impl.swap_data(new_impl);
     }
 

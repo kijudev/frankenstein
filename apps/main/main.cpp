@@ -12,8 +12,10 @@ int main() {
     frank::DynamicArray<int> ns;
 
     ns.push_back(69);
-    ns.push_back(42);
-    ns.push_back(2137);
+    ns.push_back(420);
+
+    std::cout << ns.size() << "\n";
+    std::cout << ns.capacity() << "\n";
 
     for (size_t i = 0; i < ns.size(); ++i) {
         std::cout << ns[i] << "\n";
