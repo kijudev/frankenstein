@@ -66,10 +66,10 @@ private:
             : Allocator() { }
 
         Impl(const Allocator& a) FRANK_NOEXCEPT(
-            std::is_nothrow_constructible_v<Allocator, decltype(a)>)
+            (std::is_nothrow_constructible_v<Allocator, decltype(a)>))
             : Allocator(a) { };
 
-        Impl(Allocator&& a) FRANK_NOEXCEPT
+        Impl(Allocator&& a) FRANK_NOEXCEPT(true)
             : Allocator(std::move_if_noexcept(a)) { };
 
         Impl(const Impl& other) = delete;

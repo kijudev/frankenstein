@@ -17,6 +17,8 @@ int main() {
     std::cout << ns.size() << "\n";
     std::cout << ns.capacity() << "\n";
 
+    ns.erase(0);
+
     for (size_t i = 0; i < ns.size(); ++i) {
         std::cout << ns[i] << "\n";
     }
