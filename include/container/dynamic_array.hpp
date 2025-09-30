@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -77,7 +79,7 @@ private:
         Impl& operator=(const Impl& other) = delete;
         Impl& operator=(Impl&& other)      = delete;
 
-        inline bool is_null() const noexcept { return first == nullptr; }
+        bool is_null() const noexcept { return first == nullptr; }
 
         void swap(Impl& other) noexcept {
             swap_data(other);
@@ -136,6 +138,10 @@ private:
         template <typename... Args>
         void construct_item(pointer p, Args&&... args) noexcept(
             std::is_nothrow_constructible_v<T, Args...>) {
+            FRANK_ASSERT(p >= first);
+            FRANK_ASSERT(p <= last);
+            FRANK_ASSERT(p < capacity);
+
             std::allocator_traits<Allocator>::construct(
                 *this, p, std::forward<Args>(args)...);
         }
@@ -146,6 +152,10 @@ private:
 
         void destroy_range(pointer a, pointer b) noexcept(
             std::is_nothrow_destructible_v<T>) {
+            FRANK_ASSERT(a <= b);
+            FRANK_ASSERT(a >= first);
+            FRANK_ASSERT(b <= last);
+
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 for (; a != b; ++a) {
                     std::allocator_traits<Allocator>::destroy(*this, a);
@@ -155,6 +165,10 @@ private:
 
         void
         destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
+            FRANK_ASSERT(p >= first);
+            FRANK_ASSERT(p < last);
+            FRANK_ASSERT(p < capacity);
+
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 std::allocator_traits<Allocator>::destroy(*this, p);
             }
@@ -162,6 +176,10 @@ private:
 
         void move_range_right(pointer a, pointer b, size_type n) noexcept(
             std::is_nothrow_move_constructible_v<T>) {
+            FRANK_ASSERT(a <= b);
+            FRANK_ASSERT(a >= first);
+            FRANK_ASSERT(b <= last);
+
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
                     static_cast<void*>(a + n),
@@ -174,6 +192,10 @@ private:
 
         void move_range_left(pointer a, pointer b, size_type n) noexcept(
             std::is_nothrow_move_constructible_v<T>) {
+            FRANK_ASSERT(a <= b);
+            FRANK_ASSERT(a >= first);
+            FRANK_ASSERT(b <= last);
+
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
                     static_cast<void*>(a - n),
@@ -396,6 +418,34 @@ public:
         impl.advance(1);
     }
 
+    void assign(std::initializer_list<T> il) { assign(il.begin(), il.end()); }
+
+    template <typename It>
+        requires std::input_iterator<It>
+                 && std::convertible_to<std::iter_value_t<It>, T>
+    void assign(It a, It b) {
+        impl.destroy_self();
+
+        size_type size = std::distance(a, b);
+        if (size > capacity()) {
+            grow(size);
+        }
+
+        if constexpr (
+            std::contiguous_iterator<It> && std::is_trivially_copyable_v<T>
+            && std::is_trivially_copyable_v<std::iter_value_t<It>>
+            && std::is_same_v<std::iter_value_t<It>, T>) {
+            copy_range(
+                reinterpret_cast<pointer>(a),
+                reinterpret_cast<pointer>(b),
+                impl.first);
+        } else {
+            std::copy(a, b, impl.first);
+        }
+
+        impl.advance(size);
+    }
+
     void erase(size_type idx) noexcept(
         std::is_nothrow_destructible_v<T>
         && std::is_nothrow_move_constructible_v<T>) {
@@ -411,7 +461,7 @@ public:
         impl.prev(1);
     }
 
-    void clear(size_type idx) noexcept(std::is_nothrow_destructible_v<T>) {
+    void clear() noexcept(std::is_nothrow_destructible_v<T>) {
         impl.destroy_self();
         impl.last = impl.first;
     }
