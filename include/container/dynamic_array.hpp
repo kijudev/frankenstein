@@ -70,7 +70,8 @@ private:
             (std::is_nothrow_constructible_v<Allocator, decltype(a)>))
             : Allocator(a) { };
 
-        Impl(Allocator&& a) noexcept(true)
+        Impl(Allocator&& a) noexcept(
+            std::is_nothrow_move_constructible_v<Allocator>)
             : Allocator(std::move_if_noexcept(a)) { };
 
         Impl(const Impl& other) = delete;
@@ -139,7 +140,6 @@ private:
         void construct_item(pointer p, Args&&... args) noexcept(
             std::is_nothrow_constructible_v<T, Args...>) {
             FRANK_ASSERT(p >= first);
-            FRANK_ASSERT(p <= last);
             FRANK_ASSERT(p < capacity);
 
             std::allocator_traits<Allocator>::construct(
@@ -154,7 +154,7 @@ private:
             std::is_nothrow_destructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b <= last);
+            FRANK_ASSERT(b < capacity);
 
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 for (; a != b; ++a) {
@@ -166,7 +166,6 @@ private:
         void
         destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
             FRANK_ASSERT(p >= first);
-            FRANK_ASSERT(p < last);
             FRANK_ASSERT(p < capacity);
 
             if constexpr (!std::is_trivially_destructible_v<T>) {
@@ -178,7 +177,7 @@ private:
             std::is_nothrow_move_constructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b <= last);
+            FRANK_ASSERT(b < capacity);
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
@@ -194,7 +193,7 @@ private:
             std::is_nothrow_move_constructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b <= last);
+            FRANK_ASSERT(b < capacity);
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
@@ -215,7 +214,7 @@ private:
 public:
     ~DynamicArray() = default;
 
-    DynamicArray() noexcept
+    DynamicArray() noexcept(std::is_nothrow_constructible_v<Impl>)
         : impl() { }
 
     explicit DynamicArray(const Allocator& a) noexcept(
@@ -233,17 +232,33 @@ public:
               std::allocator_traits<T>::select_on_container_copy_construction(
                   static_cast<Allocator>(other.impl))) { }
 
-    DynamicArray(const DynamicArray& other, const Allocator& a)
+    DynamicArray(const DynamicArray& other, const Allocator& a = Allocator())
         : impl(a) {
         grow(other.size());
         copy_range(other.impl.first, other.impl.last, impl.first);
     }
 
-    DynamicArray(DynamicArray&& other) noexcept { impl.swap(other.impl); }
+    DynamicArray(DynamicArray&& other) noexcept(
+        std::is_nothrow_move_constructible_v<Allocator>) {
+        impl.swap(other.impl);
+    }
 
-    DynamicArray(DynamicArray&& other, const Allocator& a) noexcept
+    DynamicArray(DynamicArray&& other, const Allocator& a) noexcept(
+        std::is_nothrow_constructible_v<Impl, decltype(a)>)
         : impl(a) {
         impl.swap_data(other.impl);
+    }
+
+    DynamicArray(std::initializer_list<T> il, const Allocator& a = Allocator())
+        : impl(a) {
+        assign(il);
+    }
+
+    template <typename It>
+        requires std::input_iterator<It>
+                 && std::convertible_to<std::iter_value_t<It>, T>
+    DynamicArray(It a, It b) {
+        assign(a, b);
     }
 
     DynamicArray& operator=(DynamicArray other) {
@@ -253,6 +268,29 @@ public:
         } else {
             impl.swap_data(other.impl);
         }
+
+        return *this;
+    }
+
+    DynamicArray& operator=(DynamicArray&& other) noexcept(
+        std::is_nothrow_destructible_v<T>
+        && (std::allocator_traits<
+                Allocator>::propagate_on_container_move_assigment ?
+                std::is_nothrow_move_constructible_v<Allocator> :
+                true)) {
+        if constexpr (std::allocator_traits<
+                          Allocator>::propagate_on_container_move_assigment) {
+            impl.swap(other.impl);
+        } else {
+            impl.swap_data(other.impl);
+        }
+
+        if (!other.is_null()) {
+            other.impl.destroy_self();
+            other.impl.deallocate_self();
+        }
+
+        other.impl.init_self_null();
 
         return *this;
     }
