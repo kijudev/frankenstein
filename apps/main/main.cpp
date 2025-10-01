@@ -9,9 +9,7 @@
 #include <vector>
 
 int main() {
-    frank::DynamicArray<int> ns;
-
-    ns.push_back(69);
+    frank::DynamicArray<int> ns {1, 2, 3, 4, 5, 6};
 
     for (size_t i = 0; i < ns.size(); ++i) {
         std::cout << ns[i] << "\n";

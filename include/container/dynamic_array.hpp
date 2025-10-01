@@ -154,7 +154,7 @@ private:
             std::is_nothrow_destructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b < capacity);
+            // FRANK_ASSERT((b != nullptr) || (b < capacity));
 
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 for (; a != b; ++a) {
@@ -177,7 +177,7 @@ private:
             std::is_nothrow_move_constructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b < capacity);
+            // FRANK_ASSERT((b != nullptr) || (b < capacity));
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
@@ -193,7 +193,7 @@ private:
             std::is_nothrow_move_constructible_v<T>) {
             FRANK_ASSERT(a <= b);
             FRANK_ASSERT(a >= first);
-            FRANK_ASSERT(b < capacity);
+            // FRANK_ASSERT((b != nullptr) || (b < capacity));
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
@@ -474,8 +474,8 @@ public:
             && std::is_trivially_copyable_v<std::iter_value_t<It>>
             && std::is_same_v<std::iter_value_t<It>, T>) {
             copy_range(
-                reinterpret_cast<pointer>(a),
-                reinterpret_cast<pointer>(b),
+                reinterpret_cast<const_pointer>(a),
+                reinterpret_cast<const_pointer>(b),
                 impl.first);
         } else {
             std::copy(a, b, impl.first);
@@ -547,24 +547,24 @@ public:
     }
 
 private:
-    void copy_range(pointer a, pointer b, pointer dest) noexcept(
+    void copy_range(const_pointer a, const_pointer b, pointer dest) noexcept(
         std::is_nothrow_copy_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
-                static_cast<void*>(a),
+                static_cast<const void*>(a),
                 std::distance(a, b) * sizeof(T));
         } else {
             std::uninitialized_copy(a, b, dest);
         }
     }
 
-    void move_range(pointer a, pointer b, pointer dest) noexcept(
+    void move_range(const_pointer a, const_pointer b, pointer dest) noexcept(
         std::is_nothrow_move_constructible_v<T>) {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
-                static_cast<void*>(a),
+                static_cast<const void*>(a),
                 std::distance(a, b) * sizeof(T));
         } else {
             std::uninitialized_move(a, b, dest);
