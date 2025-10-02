@@ -256,6 +256,8 @@ public:
         assign(a, b);
     }
 
+    // TODO
+    // Optimize
     DynamicArray& operator=(DynamicArray other) {
         if constexpr (std::allocator_traits<
                           Allocator>::propagate_on_container_copy_assignment) {
@@ -270,11 +272,11 @@ public:
     DynamicArray& operator=(DynamicArray&& other) noexcept(
         std::is_nothrow_destructible_v<T>
         && (std::allocator_traits<
-                Allocator>::propagate_on_container_move_assigment ?
+                Allocator>::propagate_on_container_move_assignment ?
                 std::is_nothrow_move_constructible_v<Allocator> :
                 true)) {
         if constexpr (std::allocator_traits<
-                          Allocator>::propagate_on_container_move_assigment) {
+                          Allocator>::propagate_on_container_move_assignment) {
             impl.swap_with_allocator(other.impl);
         } else {
             impl.swap_without_allocator(other.impl);
@@ -428,20 +430,12 @@ public:
         return static_cast<Allocator>(impl);
     }
 
-    [[nodiscard]] std::optional<T*> data() noexcept {
-        return is_null() ? std::nullopt : std::to_address(impl.first);
-    }
-
-    [[nodiscard]] std::optional<const T*> data() const noexcept {
-        return is_null() ? std::nullopt : std::to_address(impl.first);
-    }
-
-    T* data_unsafe() noexcept {
+    T* data() noexcept {
         FRANK_ASSERT(!is_null());
         return std::to_address(impl.first);
     }
 
-    const T* data_unsafe() const noexcept {
+    const T* data() const noexcept {
         FRANK_ASSERT(!is_null());
         return std::to_address(impl.first);
     }
