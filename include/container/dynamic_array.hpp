@@ -24,6 +24,8 @@
 
 namespace frank {
 template <typename T, typename Allocator = std::allocator<T>>
+    requires std::copy_constructible<T> && std::move_constructible<T>
+             && std::destructible<T>
 class DynamicArray {
 public:
     using value_type      = T;
@@ -83,46 +85,23 @@ private:
 
         bool is_null() const noexcept { return first == nullptr; }
 
-        void swap(Impl& other) noexcept {
-            swap_data(other);
-            swap_allocator(other);
-        }
-
-        void swap_data(Impl& other) noexcept {
+        void swap_without_allocator(Impl& other) noexcept {
             std::swap(first, other.first);
             std::swap(last, other.last);
             std::swap(capacity, other.capacity);
         }
 
-        void swap_allocator(Impl& other) noexcept {
-            std::swap(
-                static_cast<Allocator&>(*this), static_cast<Allocator&>(other));
-        }
-
-        void set(pointer f, pointer l, pointer c) noexcept {
-            first    = f;
-            last     = l;
-            capacity = c;
-        }
-
-        void reset(size_type sz) noexcept(std::is_nothrow_destructible_v<T>) {
-            destroy_self();
-            deallocate_self();
-
-            internal::ScopeGuard rollback([&]() { init_self_null(); });
-            init_self(sz);
-            rollback.dismiss();
+        void swap_with_allocator(Impl& other) noexcept {
+            std::swap(*this, other);
         }
 
         void init_self(size_type sz) {
-            if (sz == 0) [[unlikely]] {
-                init_self_null();
-                return;
-            }
+            FRANK_ASSERT(sz != 0);
 
             first    = std::allocator_traits<Allocator>::allocate(*this, sz);
             last     = first;
             capacity = first;
+
             std::advance(capacity, sz);
         }
 
@@ -134,17 +113,18 @@ private:
 
         void deallocate_self() noexcept {
             std::allocator_traits<Allocator>::deallocate(
-                *this, first, std::distance(first, capacity));
+                static_cast<Allocator&>(*this),
+                first,
+                std::distance(first, capacity));
         }
 
         template <typename... Args>
         void construct_item(pointer p, Args&&... args) noexcept(
             std::is_nothrow_constructible_v<T, Args...>) {
-            FRANK_ASSERT(p >= first);
-            FRANK_ASSERT(p < capacity);
+            FRANK_ASSERT(is_valid_pointer(p));
 
             std::allocator_traits<Allocator>::construct(
-                *this, p, std::forward<Args>(args)...);
+                static_cast<Allocator&>(*this), p, std::forward<Args>(args)...);
         }
 
         void destroy_self() noexcept(std::is_nothrow_destructible_v<T>) {
@@ -153,37 +133,34 @@ private:
 
         void destroy_range(pointer a, pointer b) noexcept(
             std::is_nothrow_destructible_v<T>) {
-            FRANK_ASSERT(a <= b);
-            FRANK_ASSERT(a >= first);
-            // FRANK_ASSERT((b != nullptr) || (b < capacity));
+            FRANK_ASSERT(is_valid_range(a, b));
 
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 for (; a != b; ++a) {
-                    std::allocator_traits<Allocator>::destroy(*this, a);
+                    std::allocator_traits<Allocator>::destroy(
+                        static_cast<Allocator&>(*this), a);
                 }
             }
         }
 
         void
         destroy_item(pointer p) noexcept(std::is_nothrow_destructible_v<T>) {
-            FRANK_ASSERT(p >= first);
-            FRANK_ASSERT(p < capacity);
+            FRANK_ASSERT(is_valid_pointer(p));
 
             if constexpr (!std::is_trivially_destructible_v<T>) {
-                std::allocator_traits<Allocator>::destroy(*this, p);
+                std::allocator_traits<Allocator>::destroy(
+                    static_cast<Allocator&>(*this), p);
             }
         }
 
         void move_range_right(pointer a, pointer b, size_type n) noexcept(
             std::is_nothrow_move_constructible_v<T>) {
-            FRANK_ASSERT(a <= b);
-            FRANK_ASSERT(a >= first);
-            // FRANK_ASSERT((b != nullptr) || (b < capacity));
+            FRANK_ASSERT(is_valid_range(a, b));
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
                     static_cast<void*>(a + n),
-                    static_cast<void*>(a),
+                    static_cast<const void*>(a),
                     std::distance(a, b) * sizeof(T));
             } else {
                 std::move_backward(a, b, b + n);
@@ -192,22 +169,39 @@ private:
 
         void move_range_left(pointer a, pointer b, size_type n) noexcept(
             std::is_nothrow_move_constructible_v<T>) {
-            FRANK_ASSERT(a <= b);
-            FRANK_ASSERT(a >= first);
-            // FRANK_ASSERT((b != nullptr) || (b < capacity));
+            FRANK_ASSERT(is_valid_range(a, b));
 
             if constexpr (std::is_trivially_move_constructible_v<T>) {
                 std::memmove(
                     static_cast<void*>(a - n),
-                    static_cast<void*>(a),
+                    static_cast<const void*>(a),
                     std::distance(a, b) * sizeof(T));
             } else {
                 std::move(a, b, a - n);
             }
         }
-        inline void advance(size_type n) { std::advance(last, n); }
+        inline void advance(size_type n) {
+            FRANK_ASSERT(n != 0);
+            std::advance(last, n);
+        }
 
-        inline void prev(size_type n) { last = std::prev(last, n); }
+        inline void prev(size_type n) {
+            FRANK_ASSERT(n != 0);
+            last = std::prev(last, n);
+        }
+
+        [[nodiscard]] inline bool is_valid_pointer(pointer p) noexcept {
+            return std::distance(first, p) >= 0
+                   && std::distance(p, capacity) > 0;
+        }
+
+        [[nodiscard]] inline bool
+        is_valid_range(pointer a, pointer b) noexcept {
+            return std::distance(a, b) >= 0 && std::distance(first, a) >= 0
+                   && std::distance(a, capacity) >= 0
+                   && std::distance(first, b) >= 0
+                   && std::distance(b, capacity) >= 0;
+        }
     };
 
     Impl impl;
@@ -247,7 +241,7 @@ public:
     DynamicArray(DynamicArray&& other, const Allocator& a) noexcept(
         std::is_nothrow_constructible_v<Impl, decltype(a)>)
         : impl(a) {
-        impl.swap_data(other.impl);
+        impl.swap_without_allocator(other.impl);
     }
 
     DynamicArray(std::initializer_list<T> il, const Allocator& a = Allocator())
@@ -267,7 +261,7 @@ public:
                           Allocator>::propagate_on_container_copy_assignment) {
             impl.swap(other.impl);
         } else {
-            impl.swap_data(other.impl);
+            impl.swap_without_allocator(other.impl);
         }
 
         return *this;
@@ -283,7 +277,7 @@ public:
                           Allocator>::propagate_on_container_move_assigment) {
             impl.swap(other.impl);
         } else {
-            impl.swap_data(other.impl);
+            impl.swap_without_allocator(other.impl);
         }
 
         if (!other.is_null()) {
@@ -543,14 +537,14 @@ public:
         new_impl.init_self(sz);
 
         if (is_null()) [[unlikely]] {
-            impl.swap_data(new_impl);
+            impl.swap_without_allocator(new_impl);
             return;
         }
 
         move_range(impl.first, impl.last, new_impl.first);
         new_impl.advance(size());
 
-        impl.swap_data(new_impl);
+        impl.swap_without_allocator(new_impl);
         new_impl.last = new_impl.first;
     }
 
@@ -572,6 +566,8 @@ public:
 private:
     void copy_range(const_pointer a, const_pointer b, pointer dest) noexcept(
         std::is_nothrow_copy_constructible_v<T>) {
+        FRANK_ASSERT(std::distance(a, b) >= 0);
+
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
@@ -584,6 +580,8 @@ private:
 
     void move_range(const_pointer a, const_pointer b, pointer dest) noexcept(
         std::is_nothrow_move_constructible_v<T>) {
+        FRANK_ASSERT(std::distance(a, b) >= 0);
+
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(
                 static_cast<void*>(dest),
