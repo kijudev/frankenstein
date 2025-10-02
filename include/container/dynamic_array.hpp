@@ -225,7 +225,7 @@ public:
         : DynamicArray(
               other,
               std::allocator_traits<T>::select_on_container_copy_construction(
-                  static_cast<Allocator>(other.impl))) { }
+                  static_cast<const Allocator&>(other.impl))) { }
 
     DynamicArray(const DynamicArray& other, const Allocator& a = Allocator())
         : impl(a) {
@@ -235,7 +235,7 @@ public:
 
     DynamicArray(DynamicArray&& other) noexcept(
         std::is_nothrow_move_constructible_v<Allocator>) {
-        impl.swap(other.impl);
+        impl.swap_with_allocator(other.impl);
     }
 
     DynamicArray(DynamicArray&& other, const Allocator& a) noexcept(
@@ -259,7 +259,7 @@ public:
     DynamicArray& operator=(DynamicArray other) {
         if constexpr (std::allocator_traits<
                           Allocator>::propagate_on_container_copy_assignment) {
-            impl.swap(other.impl);
+            impl.swap_with_allocator(other.impl);
         } else {
             impl.swap_without_allocator(other.impl);
         }
@@ -275,7 +275,7 @@ public:
                 true)) {
         if constexpr (std::allocator_traits<
                           Allocator>::propagate_on_container_move_assigment) {
-            impl.swap(other.impl);
+            impl.swap_with_allocator(other.impl);
         } else {
             impl.swap_without_allocator(other.impl);
         }
@@ -361,29 +361,42 @@ public:
     }
 
     [[nodiscard]] std::optional<reference> front() noexcept {
-        return is_null() ? std::nullopt : std::optional<reference>(*impl.first);
+        return is_empty() ? std::nullopt :
+                            std::optional<reference>(*impl.first);
     }
 
     [[nodiscard]] std::optional<const_reference> front() const noexcept {
-        return is_null() ? std::nullopt :
-                           std::optional<const_reference>(*impl.first);
+        return is_empty() ? std::nullopt :
+                            std::optional<const_reference>(*impl.first);
     }
 
-    reference       front_unsafe() noexcept { return *impl.first; }
-    const_reference front_unsafe() const noexcept { return *impl.first; }
+    reference front_unsafe() noexcept {
+        FRANK_ASSERT(!is_empty());
+        return *impl.first;
+    }
+    const_reference front_unsafe() const noexcept {
+        FRANK_ASSERT(!is_empty());
+        return *impl.first;
+    }
 
     [[nodiscard]] std::optional<reference> back() noexcept {
-        return is_null() ? std::nullopt :
-                           std::optional<reference>(impl.last[-1]);
+        return is_empty() ? std::nullopt :
+                            std::optional<reference>(impl.last[-1]);
     }
 
     [[nodiscard]] std::optional<const_reference> back() const noexcept {
-        return is_null() ? std::nullopt :
-                           std::optional<const_reference>(impl.last[-1]);
+        return is_empty() ? std::nullopt :
+                            std::optional<const_reference>(impl.last[-1]);
     }
 
-    reference       back_unsafe() noexcept { return impl.last[-1]; }
-    const_reference back_unsafe() const noexcept { return impl.last[-1]; }
+    reference back_unsafe() noexcept {
+        FRANK_ASSERT(!is_empty());
+        return impl.last[-1];
+    }
+    const_reference back_unsafe() const noexcept {
+        FRANK_ASSERT(!is_empty());
+        return impl.last[-1];
+    }
 
     [[nodiscard]] bool is_null() const noexcept { return impl.is_null(); }
 
@@ -423,8 +436,13 @@ public:
         return is_null() ? std::nullopt : std::to_address(impl.first);
     }
 
-    T*       data_unsafe() noexcept { return std::to_address(impl.first); }
+    T* data_unsafe() noexcept {
+        FRANK_ASSERT(!is_null());
+        return std::to_address(impl.first);
+    }
+
     const T* data_unsafe() const noexcept {
+        FRANK_ASSERT(!is_null());
         return std::to_address(impl.first);
     }
 
@@ -523,6 +541,7 @@ public:
 
     void reserve(size_type sz) {
         FRANK_ASSERT(sz > size());
+
         if (sz <= capacity()) {
             return;
         }
