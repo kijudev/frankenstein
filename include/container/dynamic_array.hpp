@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdio>
@@ -293,6 +294,28 @@ public:
         other.impl.init_self_null();
 
         return *this;
+    }
+
+    bool operator==(const DynamicArray& other) const noexcept {
+        return size() == other.size()
+               && std::equal(cbegin(), cend(), other.cbegin());
+    }
+
+    auto operator<=>(const DynamicArray& other) const
+        noexcept(noexcept(std::lexicographical_compare_three_way(
+            std::declval<const_iterator>(),
+            std::declval<const_iterator>(),
+            std::declval<const_iterator>(),
+            std::declval<const_iterator>(),
+            std::compare_three_way {})))
+        requires std::three_way_comparable<T>
+    {
+        return std::lexicographical_compare_three_way(
+            cbegin(),
+            cend(),
+            other.cbegin(),
+            other.cend(),
+            std::compare_three_way {});
     }
 
 public:

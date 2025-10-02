@@ -52,8 +52,6 @@ private:
 
         Impl& operator=(const Impl&) = delete;
         Impl& operator=(Impl&&)      = delete;
-
-        Node* add
     };
 };
 }
