@@ -2,12 +2,6 @@ CXX      := clang++
 CXXOPT   := -O1 -g
 CXXFLAGS := -std=c++23 -Wall -Wextra -Iinclude 
 
-BOLD     := \033[1m
-BLUE     := \033[34m
-GREEN    := \033[32m
-RED      := \033[31m
-RESET    := \033[0m
-
 APPS      := $(wildcard apps/*/main.cpp)
 APP_BINS  := $(patsubst apps/%/main.cpp,bin/%,$(APPS))
 
@@ -40,11 +34,11 @@ compile-commands: clean
 run-tests: tests
 	@set -e; \
 	for t in $(TEST_BINS); do \
-	  printf "$(BOLD)$(BLUE)Running %s$(RESET)\n" "$$t"; \
+	  printf "Running %s\n" "$$t"; \
 	  if "$$t"; then \
-	    printf "$(GREEN)PASS$(RESET)\n"; \
+	    printf "PASS$\n"; \
 	  else \
-	    printf "$(RED)FAIL: %s$(RESET)\n" "$$t"; \
+	    printf "FAIL: %s\n" "$$t"; \
 	    exit 1; \
 	  fi \
 	done
