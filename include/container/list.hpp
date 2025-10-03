@@ -32,6 +32,9 @@ struct ListNode {
 
 template <typename T, typename Allocator = std::allocator<ListNode<T>>>
 class List {
+private:
+    using Node = ListNode<T>;
+
 public:
     using value_type      = T;
     using reference       = T&;
@@ -42,30 +45,35 @@ public:
     using pointer         = std::allocator_traits<Allocator>::pointer;
     using const_pointer   = std::allocator_traits<Allocator>::const_pointer;
 
-    using iterator               = T*;
-    using const_iterator         = const T*;
-    using reverse_iterator       = std::reverse_iterator<T*>;
-    using const_reverse_iterator = std::reverse_iterator<const T*>;
+    using iterator               = Node*;
+    using const_iterator         = const Node*;
+    using reverse_iterator       = std::reverse_iterator<Node*>;
+    using const_reverse_iterator = std::reverse_iterator<const Node*>;
     using iterator_category      = std::bidirectional_iterator_tag;
 
 private:
-    using Node = ListNode<T>;
-
     struct Impl : public Allocator {
         Node* head {nullptr};
         Node* tail {nullptr};
 
-        ~Impl() { }
+        ~Impl() noexcept(std::is_nothrow_destructible_v<T>) {
+            while (head != nullptr) {
+                Node* next = head->next;
 
-        Impl(const Allocator&& a) noexcept(
+                destroy_node(head);
+                deallocate_node(head);
+
+                head = next;
+            }
+        }
+
+        Impl(const Allocator& a) noexcept(
             std::is_nothrow_constructible_v<Allocator, decltype(a)>)
             : Allocator(a) { }
 
-        Impl(Allocator&& a) noexcept(
-            std::is_nothrow_constructible_v<Allocator, decltype(a)>)
-            : Allocator(std::move(a)) { }
+        Impl()
+            : Allocator() { };
 
-        Impl()            = delete;
         Impl(const Impl&) = delete;
         Impl(Impl&&)      = delete;
 
@@ -102,8 +110,10 @@ private:
 
         void destroy_node(Node* node) noexcept(
             std::is_nothrow_destructible_v<Node>) {
-            std::allocator_traits<Allocator>(
-                static_cast<Allocator&>(*this), node);
+            if constexpr (!std::is_trivially_destructible_v<T>) {
+                std::allocator_traits<Allocator>::destroy(
+                    static_cast<Allocator&>(*this), node);
+            }
         }
 
         void deallocate_node(Node* node) noexcept {
@@ -111,5 +121,43 @@ private:
                 static_cast<Allocator&>(*this), node);
         }
     };
+
+    Impl impl;
+
+public:
+    ~List() = default;
+
+    List() { }
+
+public:
+    reference head() noexcept {
+        FRANK_ASSERT(!is_null());
+        return impl.head->item;
+    }
+
+public:
+    [[nodiscard]] bool is_null() { return impl.is_null(); }
+
+public:
+    iterator push_back(const T& item) noexcept { return emplace_back(item); }
+
+    template <typename... Args>
+    iterator emplace_back(Args&&... args) {
+        Node* node = impl.allocate_node();
+        impl.construct_node(node, std::forward<Args>(args)...);
+
+        if (is_null()) {
+            impl.head = node;
+            impl.tail = node;
+
+            return node;
+        }
+
+        impl.tail->next = node;
+        node->prev      = impl.tail;
+        impl.tail       = node;
+
+        return node;
+    }
 };
 }
