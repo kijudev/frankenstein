@@ -3,6 +3,7 @@
 // See LICENSE.md file in the project root for full license information.
 
 #include "../internal/scope_guard.hpp"
+#include "../macro/assert.hpp"
 #include <iterator>
 #include <memory>
 #include <type_traits>
@@ -21,7 +22,7 @@ struct ListNode {
     template <typename... Args>
     ListNode(Args&&... args) noexcept(
         std::is_nothrow_constructible_v<T, Args&&...>)
-        : item(std::forward(args)...) { }
+        : item(std::forward<Args>(args)...) { }
 
     ListNode(const ListNode&) = delete;
     ListNode(ListNode&&)      = delete;
@@ -94,7 +95,9 @@ private:
             std::is_nothrow_constructible_v<Node, Args&...>) {
             if constexpr (std::is_nothrow_constructible_v<Node, Args&...>) {
                 std::allocator_traits<Allocator>::construct(
-                    static_cast<Allocator&>(*this), std::forward(args)...);
+                    static_cast<Allocator&>(*this),
+                    node,
+                    std::forward<Args>(args)...);
             } else {
                 internal::ScopeGuard guard([&]() {
                     std::allocator_traits<Allocator>::deallocate(
@@ -102,7 +105,9 @@ private:
                 });
 
                 std::allocator_traits<Allocator>::construct(
-                    static_cast<Allocator&>(*this), std::forward(args)...);
+                    static_cast<Allocator&>(*this),
+                    node,
+                    std::forward<Args>(args)...);
 
                 guard.dismiss();
             }
@@ -118,7 +123,7 @@ private:
 
         void deallocate_node(Node* node) noexcept {
             std::allocator_traits<Allocator>::deallocate(
-                static_cast<Allocator&>(*this), node);
+                static_cast<Allocator&>(*this), node, 1);
         }
     };
 
